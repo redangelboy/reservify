@@ -1,0 +1,35 @@
+{
+    "nav": {
+      "login": "Iniciar sesión",
+      "register": "Empieza gratis"
+    },
+    "hero": {
+      "badge": "✨ Para barberías, salones, spas y más",
+      "title": "Tu negocio merece su propio sistema de reservas",
+      "subtitle": "Web profesional + reservaciones online + agente AI que contesta llamadas. Todo en uno, sin comisiones.",
+      "cta": "Comienza gratis 14 días",
+      "pricing": "Ver precios"
+    },
+    "features": {
+      "title": "Todo lo que necesitas",
+      "items": [
+        { "icon": "🌐", "title": "Tu propia web", "desc": "Sitio profesional con tu logo, colores y dominio propio. Sin mencionar Reservify." },
+        { "icon": "📅", "title": "Reservas 24/7", "desc": "Tus clientes agendan en línea cualquier hora. Tú recibes notificación automática." },
+        { "icon": "📞", "title": "Agente AI en llamadas", "desc": "Un agente de voz contesta llamadas, da información y agenda citas directo en tu calendario." },
+        { "icon": "📺", "title": "Pantalla en tu local", "desc": "Muestra el horario del día en tiempo real para tu equipo y clientes en el negocio." },
+        { "icon": "📊", "title": "Dashboard inteligente", "desc": "Insights con AI: clientes frecuentes, horas pico, recordatorios automáticos." },
+        { "icon": "💳", "title": "Sin comisiones", "desc": "A diferencia de Booksy, no cobramos % por cada cliente nuevo. Es tuyo." }
+      ]
+    },
+    "pricing": {
+      "title": "Planes simples, sin sorpresas",
+      "month": "/mes",
+      "cta": "Empezar ahora",
+      "plans": [
+        { "name": "Starter", "price": "$99", "desc": "Para empezar", "features": ["Web profesional", "Reservas online 24/7", "Notificaciones SMS/email", "Soporte técnico"] },
+        { "name": "Pro", "price": "$179", "desc": "Más popular", "features": ["Todo en Starter", "Dashboard con AI", "Reportes mensuales", "Cambios de contenido"], "highlight": true },
+        { "name": "Elite", "price": "$299", "desc": "Máximo impacto", "features": ["Todo en Pro", "Agente AI en llamadas", "Pantalla para tu local", "SEO básico incluido"] }
+      ]
+    },
+    "footer": "© 2025 Reservify · Todos los derechos reservados"
+  }
