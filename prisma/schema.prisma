@@ -15,6 +15,7 @@ model Business {
   domain         String?  @unique
   logo           String?
   phone          String?
+  retellPhoneNumber String?  @unique
   address        String?
   primaryColor   String   @default("#000000")
   secondaryColor String   @default("#ffffff")
