@@ -32,7 +32,16 @@ export async function POST(req: NextRequest) {
         data: { email, password: hashedPassword, name: ownerName },
       });
       const business = await tx.business.create({
-        data: { name: businessName, slug: finalSlug, phone: phone || null, plan: "starter", active: true, ownerId: owner.id },
+        data: {
+          name: businessName,
+          slug: finalSlug,
+          parentSlug: finalSlug,
+          locationSlug: "",
+          phone: phone || null,
+          plan: "starter",
+          active: true,
+          ownerId: owner.id,
+        },
       });
       return { owner, business };
     });

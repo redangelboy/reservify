@@ -10,6 +10,8 @@ model Business {
   id             String   @id @default(cuid())
   name           String
   slug           String   @unique
+  parentSlug     String?
+  locationSlug   String   @default("")
   domain         String?  @unique
   logo           String?
   phone          String?
@@ -21,11 +23,15 @@ model Business {
   createdAt      DateTime @default(now())
   ownerId        String
 
-  barbers      Staff[]
-  services     Service[]
-  appointments Appointment[]
-  schedules    Schedule[]
-  owner        Owner    @relation(fields: [ownerId], references: [id])
+  staff             Staff[]
+  services          Service[]
+  appointments      Appointment[]
+  schedules         Schedule[]
+  staffAssignments  StaffAssignment[] @relation("StaffAssignmentLocation")
+  serviceLocations  ServiceLocation[] @relation("ServiceLocationLocation")
+  owner             Owner             @relation(fields: [ownerId], references: [id])
+
+  @@index([parentSlug])
 }
 
 model Staff {
@@ -35,9 +41,10 @@ model Staff {
   photo      String?
   active     Boolean @default(true)
 
-  business     Business      @relation(fields: [businessId], references: [id])
-  appointments Appointment[]
-  schedules    Schedule[]
+  business         Business          @relation(fields: [businessId], references: [id])
+  staffAssignments StaffAssignment[]
+  appointments     Appointment[]
+  schedules        Schedule[]
 }
 
 model Service {
@@ -48,8 +55,36 @@ model Service {
   duration   Int
   active     Boolean @default(true)
 
-  business     Business      @relation(fields: [businessId], references: [id])
-  appointments Appointment[]
+  business         Business          @relation(fields: [businessId], references: [id])
+  serviceLocations ServiceLocation[]
+  appointments     Appointment[]
+}
+
+model StaffAssignment {
+  id         String  @id @default(cuid())
+  staffId    String
+  businessId String
+  active     Boolean @default(true)
+
+  staff    Staff    @relation(fields: [staffId], references: [id])
+  location Business @relation("StaffAssignmentLocation", fields: [businessId], references: [id])
+
+  @@unique([staffId, businessId])
+  @@index([businessId])
+}
+
+model ServiceLocation {
+  id         String  @id @default(cuid())
+  serviceId  String
+  businessId String
+  price      Float?
+  active     Boolean @default(true)
+
+  service  Service  @relation(fields: [serviceId], references: [id])
+  location Business @relation("ServiceLocationLocation", fields: [businessId], references: [id])
+
+  @@unique([serviceId, businessId])
+  @@index([businessId])
 }
 
 model Schedule {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
+import { getMainBusinessIdForOwner } from "@/lib/main-business";
 
 const adapter = new PrismaPg({
   connectionString: "postgresql://reservify_user:reservify123@localhost:5432/reservify"
@@ -10,7 +11,7 @@ const prisma = new PrismaClient({ adapter });
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, password, businessId } = await req.json();
+    const { email, password } = await req.json();
 
     if (!email || !password) {
       return NextResponse.json({ error: "Email and password are required" }, { status: 400 });
@@ -18,7 +19,6 @@ export async function POST(req: NextRequest) {
 
     const owner = await prisma.owner.findUnique({
       where: { email },
-      include: { businesses: true },
     });
 
     if (!owner) {
@@ -30,19 +30,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
 
-    // Si tiene varias sucursales y no especificó cuál, devolver lista
-    if (owner.businesses.length > 1 && !businessId) {
-      return NextResponse.json({
-        requireBusinessSelect: true,
-        businesses: owner.businesses.map(b => ({ id: b.id, name: b.name, slug: b.slug })),
-        ownerId: owner.id,
-      });
+    const mainId = await getMainBusinessIdForOwner(prisma, owner.id);
+    if (!mainId) {
+      return NextResponse.json({ error: "No business found" }, { status: 400 });
     }
 
-    // Seleccionar la sucursal
-    const business = businessId
-      ? owner.businesses.find(b => b.id === businessId)
-      : owner.businesses[0];
+    const business = await prisma.business.findUnique({
+      where: { id: mainId },
+    });
 
     if (!business) {
       return NextResponse.json({ error: "Business not found" }, { status: 404 });

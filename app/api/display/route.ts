@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { loadLocationCatalog } from "@/lib/location-catalog";
 
 const adapter = new PrismaPg({
   connectionString: "postgresql://reservify_user:reservify123@localhost:5432/reservify"
@@ -13,12 +14,14 @@ export async function GET(req: NextRequest) {
     const slug = searchParams.get("slug");
     if (!slug) return NextResponse.json({ error: "Missing slug" }, { status: 400 });
 
-    const business = await prisma.business.findUnique({
+    const row = await prisma.business.findUnique({
       where: { slug },
-      include: { staff: { where: { active: true } } }
     });
 
-    if (!business) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    const { staff } = await loadLocationCatalog(prisma, row.id);
+    const business = { ...row, staff };
 
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);

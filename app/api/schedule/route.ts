@@ -32,6 +32,17 @@ export async function POST(req: NextRequest) {
     if (!staffId || dayOfWeek === undefined || !startTime || !endTime) {
       return NextResponse.json({ error: "All fields required" }, { status: 400 });
     }
+
+    const assigned = await prisma.staffAssignment.findFirst({
+      where: { businessId, staffId, active: true },
+    });
+    if (!assigned) {
+      return NextResponse.json(
+        { error: "Staff must be assigned to this location before scheduling" },
+        { status: 400 }
+      );
+    }
+
     const existing = await prisma.schedule.findFirst({
       where: { businessId, staffId, dayOfWeek: parseInt(dayOfWeek) }
     });

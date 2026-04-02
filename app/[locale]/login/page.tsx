@@ -5,7 +5,6 @@ export default function LoginPage() {
   const [form, setForm] = useState({ email: "", password: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [businesses, setBusinesses] = useState<any[]>([]);
 
   const handleSubmit = async () => {
     setLoading(true);
@@ -18,28 +17,6 @@ export default function LoginPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Invalid credentials");
-      if (data.requireBusinessSelect) {
-        setBusinesses(data.businesses);
-      } else {
-        window.location.href = "/en/dashboard";
-      }
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSelectBusiness = async (businessId: string) => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, businessId }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
       window.location.href = "/en/dashboard";
     } catch (err: any) {
       setError(err.message);
@@ -47,26 +24,6 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
-
-  if (businesses.length > 0) return (
-    <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <a href="/" className="text-2xl font-bold tracking-tight">Reservify</a>
-          <p className="text-gray-400 text-sm mt-2">Select a location</p>
-        </div>
-        <div className="flex flex-col gap-3">
-          {businesses.map((b) => (
-            <button key={b.id} onClick={() => handleSelectBusiness(b.id)}
-              className="border border-white/10 rounded-2xl px-6 py-4 text-left hover:border-white/30 transition">
-              <div className="font-semibold">{b.name}</div>
-              <div className="text-sm text-gray-400 mt-1">{b.slug}</div>
-            </button>
-          ))}
-        </div>
-      </div>
-    </main>
-  );
 
   return (
     <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">

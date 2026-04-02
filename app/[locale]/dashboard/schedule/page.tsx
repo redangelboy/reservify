@@ -66,7 +66,9 @@ export default function SchedulePage() {
       </nav>
       <div className="max-w-3xl mx-auto px-8 py-10">
         <h1 className="text-2xl font-bold mb-2">Manage Schedule</h1>
-        <p className="text-gray-400 text-sm mb-8">Set working hours for each staff member.</p>
+        <p className="text-gray-400 text-sm mb-8">
+          Set working hours for each staff member. Times are US Central (America/Chicago — CST/CDT).
+        </p>
         <div className="border border-white/10 rounded-2xl p-6 mb-8">
           <h2 className="font-semibold mb-4">Add working hours</h2>
           <div className="flex flex-col gap-3">

@@ -1,14 +1,36 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams } from "next/navigation";
+import { DateTime } from "luxon";
+import { BUSINESS_TIMEZONE } from "@/lib/business-timezone";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+function getNextBusinessDays(count: number): DateTime[] {
+  const start = DateTime.now().setZone(BUSINESS_TIMEZONE).startOf("day");
+  return Array.from({ length: count }, (_, i) => start.plus({ days: i }));
+}
+
 export default function BookPage() {
   const params = useParams();
-  const slug = params.slug as string;
+  const segments = useMemo(() => {
+    const raw = params.slug as string | string[] | undefined;
+    if (!raw) return [];
+    return Array.isArray(raw) ? raw : [raw];
+  }, [params.slug]);
+
+  const parentSlug = segments[0] ?? "";
+  const locationSlug = segments[1];
+
+  const bookQuery = useMemo(() => {
+    const qs = new URLSearchParams();
+    if (parentSlug) qs.set("parentSlug", parentSlug);
+    if (locationSlug) qs.set("locationSlug", locationSlug);
+    return qs.toString();
+  }, [parentSlug, locationSlug]);
 
   const [business, setBusiness] = useState<any>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [step, setStep] = useState(1);
   const [selectedStaff, setSelectedStaff] = useState<any>(null);
   const [selectedService, setSelectedService] = useState<any>(null);
@@ -19,30 +41,61 @@ export default function BookPage() {
   const [loading, setLoading] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState("");
+  const [nowTick, setNowTick] = useState(Date.now());
 
   useEffect(() => {
-    fetch(`/api/book?slug=${slug}`)
+    if (!parentSlug) return;
+    setLoadError(null);
+    fetch(`/api/book?${bookQuery}`)
+      .then(async (r) => {
+        const data = await r.json();
+        if (!r.ok) {
+          setLoadError(data.error || "Not found");
+          setBusiness(null);
+          return;
+        }
+        setBusiness(data);
+      });
+  }, [bookQuery, parentSlug]);
+
+  useEffect(() => {
+    if (!parentSlug || !selectedStaff || !selectedService || !selectedDate) return;
+    const qs = new URLSearchParams(bookQuery);
+    qs.set("staffId", selectedStaff.id);
+    qs.set("serviceId", selectedService.id);
+    qs.set("date", selectedDate);
+    fetch(`/api/book/availability?${qs}`)
       .then(r => r.json())
-      .then(data => setBusiness(data));
-  }, [slug]);
+      .then(data => setSlots(data.slots || []));
+  }, [bookQuery, parentSlug, selectedStaff, selectedService, selectedDate]);
 
   useEffect(() => {
-    if (selectedStaff && selectedService && selectedDate) {
-      fetch(`/api/book/availability?slug=${slug}&staffId=${selectedStaff.id}&serviceId=${selectedService.id}&date=${selectedDate}`)
-        .then(r => r.json())
-        .then(data => setSlots(data.slots || []));
-    }
-  }, [selectedStaff, selectedService, selectedDate]);
+    if (step !== 3) return;
+    const todayBiz = DateTime.now().setZone(BUSINESS_TIMEZONE).toFormat("yyyy-LL-dd");
+    if (selectedDate !== todayBiz) return;
+    const tickInterval = setInterval(() => setNowTick(Date.now()), 60000);
+    return () => clearInterval(tickInterval);
+  }, [step, selectedDate]);
 
-  const getNext7Days = () => {
-    const days = [];
-    for (let i = 0; i < 7; i++) {
-      const d = new Date();
-      d.setDate(d.getDate() + i);
-      days.push(d);
-    }
-    return days;
-  };
+  const displaySlots = useMemo(() => {
+    if (!selectedDate) return [];
+    const todayBiz = DateTime.now().setZone(BUSINESS_TIMEZONE).toFormat("yyyy-LL-dd");
+    if (selectedDate !== todayBiz) return slots;
+
+    const now = Date.now();
+    return slots.filter((slot) => {
+      const parts = slot.split(":");
+      const h = Number(parts[0]);
+      const min = Number(parts[1]);
+      if (Number.isNaN(h) || Number.isNaN(min)) return true;
+      const [y, mo, d] = selectedDate.split("-").map(Number);
+      const slotTime = DateTime.fromObject(
+        { year: y, month: mo, day: d, hour: h, minute: min },
+        { zone: BUSINESS_TIMEZONE }
+      );
+      return slotTime.toMillis() > now;
+    });
+  }, [slots, selectedDate, nowTick]);
 
   const handleBook = async () => {
     if (!form.clientName || !form.clientPhone) { setError("Name and phone are required"); return; }
@@ -53,7 +106,8 @@ export default function BookPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          slug,
+          parentSlug,
+          ...(locationSlug ? { locationSlug } : {}),
           staffId: selectedStaff.id,
           serviceId: selectedService.id,
           date: selectedDate,
@@ -70,6 +124,18 @@ export default function BookPage() {
       setLoading(false);
     }
   };
+
+  if (!parentSlug) return (
+    <div className="min-h-screen bg-black flex items-center justify-center">
+      <div className="text-white">Invalid booking link</div>
+    </div>
+  );
+
+  if (loadError) return (
+    <div className="min-h-screen bg-black flex items-center justify-center px-4">
+      <div className="text-center text-red-400 max-w-md">{loadError}</div>
+    </div>
+  );
 
   if (!business) return (
     <div className="min-h-screen bg-black flex items-center justify-center">
@@ -92,7 +158,7 @@ export default function BookPage() {
           </div>
         </div>
         <button onClick={() => { setConfirmed(false); setStep(1); setSelectedStaff(null); setSelectedService(null); setSelectedDate(""); setSelectedTime(""); }}
-          className="mt-6 te-sm text-gray-400 hover:text-white transition">
+          className="mt-6 text-sm text-gray-400 hover:text-white transition">
           Book another appointment
         </button>
       </div>
@@ -159,25 +225,27 @@ export default function BookPage() {
           <div>
             <button onClick={() => setStep(2)} className="text-gray-400 text-sm mb-4 hover:text-white transition">← Back</button>
             <h2 className="font-semibold mb-4">Choose date & time</h2>
-            <div className="flgap-2 overflow-x-auto pb-2 mb-6">
-              {getNext7Days().map((d) => {
-                const dateStr = d.toISOString().split("T")[0];
+            <p className="text-xs text-gray-500 mb-3">All times are US Central ({BUSINESS_TIMEZONE})</p>
+            <div className="flex gap-2 overflow-x-auto pb-2 mb-6">
+              {getNextBusinessDays(30).map((dt) => {
+                const dateStr = dt.toFormat("yyyy-LL-dd");
+                const dow = dt.weekday === 7 ? 0 : dt.weekday;
                 return (
                   <button key={dateStr} onClick={() => setSelectedDate(dateStr)}
                     className={`flex-shrink-0 w-14 rounded-xl py-3 text-center transition border ${selectedDate === dateStr ? "bg-white text-black border-white" : "border-white/10 hover:border-white/30"}`}>
-                    <div className="text-xs">{DAYS[d.getDay()]}</div>
-                    <div className="font-bold text-lg">{d.getDate()}</div>
+                    <div className="text-xs">{DAYS[dow]}</div>
+                    <div className="font-bold text-lg">{dt.day}</div>
                   </button>
                 );
               })}
             </div>
             {selectedDate && (
               <>
-                {slots.length === 0 ? (
+                {displaySlots.length === 0 ? (
                   <p className="text-gray-400 text-sm text-center py-4">No available slots for this day</p>
                 ) : (
                   <div className="grid grid-cols-3 gap-2">
-                    {slots.map((slot) => (
+                    {displaySlots.map((slot) => (
                       <button key={slot} onClick={() => { setSelectedTime(slot); setStep(4); }}
                         className={`border rounded-xl py-3 text-sm font-medium transition ${selectedTime === slot ? "bg-white text-black border-white" : "border-white/10 hover:border-white/30"}`}>
                         {slot}

@@ -1,27 +1,42 @@
 "use client";
 import { useState, useEffect } from "react";
+import { isMainBusinessFromPayload } from "@/lib/main-business";
 
 export default function ServicesPage() {
   const [services, setServices] = useState<any[]>([]);
+  const [locations, setLocations] = useState<any[]>([]);
+  const [isMain, setIsMain] = useState(false);
   const [form, setForm] = useState({ name: "", price: "", duration: "" });
+  const [priceDrafts, setPriceDrafts] = useState<Record<string, Record<string, string>>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [formError, setFormError] = useState("");
 
-  const fetchServices = async () => {
-    const res = await fetch("/api/services");
-    const data = await res.json();
-    if (Array.isArray(data)) setServices(data);
+  const fetchAll = async () => {
+    const [svcRes, locRes, bizRes] = await Promise.all([
+      fetch("/api/services"),
+      fetch("/api/business/locations"),
+      fetch("/api/business"),
+    ]);
+    const svcData = await svcRes.json();
+    const locData = await locRes.json();
+    const biz = await bizRes.json();
+    if (Array.isArray(svcData)) setServices(svcData);
+    if (Array.isArray(locData)) setLocations(locData);
+    if (biz?.id) setIsMain(isMainBusinessFromPayload(biz));
   };
 
-  useEffect(() => { fetchServices(); }, []);
+  useEffect(() => { fetchAll(); }, []);
+
+  const branchLocations = locations.filter((loc) => loc.locationSlug && loc.locationSlug.trim() !== "" && loc.locationSlug !== "main");
 
   const handleAdd = async () => {
     if (!form.name || !form.price || !form.duration) {
-      setError("All fields are required");
+      setFormError("All fields are required");
       return;
     }
     setLoading(true);
-    setError("");
+    setFormError("");
     try {
       const res = await fetch("/api/services", {
         method: "POST",
@@ -31,9 +46,9 @@ export default function ServicesPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setForm({ name: "", price: "", duration: "" });
-      fetchServices();
+      fetchAll();
     } catch (err: any) {
-      setError(err.message);
+      setFormError(err.message);
     } finally {
       setLoading(false);
     }
@@ -45,7 +60,63 @@ export default function ServicesPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     });
-    fetchServices();
+    fetchAll();
+  };
+
+  const isServiceAtLocation = (svc: any, locId: string) => {
+    const lp: { businessId: string; price: number | null }[] = svc.locationPricing || [];
+    return lp.some((x) => x.businessId === locId);
+  };
+
+  const getOverride = (svc: any, locId: string) => {
+    const lp = (svc.locationPricing || []).find((x: any) => x.businessId === locId);
+    if (lp?.price == null) return "";
+    return String(lp.price);
+  };
+
+  const toggleLocation = async (serviceId: string, locationId: string, checked: boolean) => {
+    setError("");
+    try {
+      if (checked) {
+        const res = await fetch("/api/services/assign", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ serviceId, businessId: locationId, price: null, active: true }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+      } else {
+        const res = await fetch("/api/services/assign", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ serviceId, businessId: locationId }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+      }
+      fetchAll();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const savePrice = async (serviceId: string, locationId: string, raw: string) => {
+    const trimmed = raw.trim();
+    const price =
+      trimmed === "" ? null : Number.parseFloat(trimmed);
+    if (trimmed !== "" && Number.isNaN(price)) {
+      setError("Invalid price");
+      return;
+    }
+    setError("");
+    const res = await fetch("/api/services/assign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ serviceId, businessId: locationId, price, active: true }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    fetchAll();
   };
 
   return (
@@ -54,79 +125,135 @@ export default function ServicesPage() {
         <a href="/en/dashboard" className="text-gray-400 hover:text-white transition text-sm">
           ← Dashboard
         </a>
-        <span className="text-white font-semibold">Services</span>
+        <span className="text-white font-semibold">{isMain ? "Services" : "Assigned services"}</span>
       </nav>
 
       <div className="max-w-2xl mx-auto px-8 py-10">
-        <h1 className="text-2xl font-bold mb-2">Manage Services</h1>
-        <p className="text-gray-400 text-sm mb-8">Add the services your business offers with pricing and duration.</p>
+        <h1 className="text-2xl font-bold mb-2">{isMain ? "Manage services" : "Assigned services"}</h1>
+        <p className="text-gray-400 text-sm mb-8">
+          {isMain
+            ? "Set catalog pricing and duration, then choose which locations offer each service. Leave override empty to use the base price."
+            : "Read-only for this location. Prices shown are effective at this site (including overrides). Switch to your main business in the location menu to edit the catalog or assignments."}
+        </p>
 
-        {/* Add service */}
-        <div className="border border-white/10 rounded-2xl p-6 mb-8">
-          <h2 className="font-semibold mb-4">Add new service</h2>
-          <div className="flex flex-col gap-3">
-            <input
-              type="text"
-              placeholder="Service name (e.g. Haircut)"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30 transition"
-            />
-            <div className="flex gap-3">
-              <div className="flex-1 relative">
-                <span className="absolute left-4 top-3 text-gray-400 text-sm">$</span>
-                <input
-                  type="number"
-                  placeholder="Price"
-                  value={form.price}
-                  onChange={(e) => setForm({ ...form, price: e.target.value })}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-8 pr-4 py-3 text-sm outline-none focus:border-white/30 transition"
-                />
+        {isMain && (
+          <div className="border border-white/10 rounded-2xl p-6 mb-8">
+            <h2 className="font-semibold mb-4">Add new service</h2>
+            <div className="flex flex-col gap-3">
+              <input
+                type="text"
+                placeholder="Service name (e.g. Haircut)"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30 transition"
+              />
+              <div className="flex gap-3">
+                <div className="flex-1 relative">
+                  <span className="absolute left-4 top-3 text-gray-400 text-sm">$</span>
+                  <input
+                    type="number"
+                    placeholder="Base price"
+                    value={form.price}
+                    onChange={(e) => setForm({ ...form, price: e.target.value })}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl pl-8 pr-4 py-3 text-sm outline-none focus:border-white/30 transition"
+                  />
+                </div>
+                <div className="flex-1 relative">
+                  <input
+                    type="number"
+                    placeholder="Duration (min)"
+                    value={form.duration}
+                    onChange={(e) => setForm({ ...form, duration: e.target.value })}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30 transition"
+                  />
+                </div>
               </div>
-              <div className="flex-1 relative">
-                <input
-                  type="number"
-                  placeholder="Duration (min)"
-                  value={form.duration}
-                  onChange={(e) => setForm({ ...form, duration: e.target.value })}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30 transition"
-                />
-              </div>
+              {formError && <p className="text-red-400 text-sm">{formError}</p>}
+              <button
+                onClick={handleAdd}
+                disabled={loading}
+                className="bg-white text-black py-3 rounded-xl text-sm font-semibold hover:bg-gray-200 transition disabled:opacity-50"
+              >
+                {loading ? "Adding..." : "Add service"}
+              </button>
             </div>
-            {error && <p className="text-red-400 text-sm">{error}</p>}
-            <button
-              onClick={handleAdd}
-              disabled={loading}
-              className="bg-white text-black py-3 rounded-xl text-sm font-semibold hover:bg-gray-200 transition disabled:opacity-50"
-            >
-              {loading ? "Adding..." : "Add service"}
-            </button>
           </div>
-        </div>
+        )}
 
-        {/* Services list */}
+        {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
+
         <div className="flex flex-col gap-3">
           {services.length === 0 ? (
             <div className="border border-white/10 rounded-2xl p-8 text-center">
               <div className="text-4xl mb-3">✂️</div>
               <p className="text-gray-400 text-sm">No services yet</p>
-              <p className="text-gray-600 text-xs mt-1">Add your first service above</p>
             </div>
           ) : (
             services.map((s) => (
-              <div key={s.id} className="border border-white/10 rounded-2xl px-6 py-4 flex justify-between items-center hover:border-white/20 transition">
-                <div>
-                  <div className="font-medium">{s.name}</div>
-                  <div className="text-sm text-gray-400 mt-1">
-                    ${s.price} · {s.duration} min
+              <div key={s.id} className="border border-white/10 rounded-2xl px-6 py-4 hover:border-white/20 transition">
+                <div className="flex justify-between items-start gap-4">
+                  <div>
+                    <div className="font-medium">{s.name}</div>
+                    <div className="text-sm text-gray-400 mt-1">
+                      ${s.price} · {s.duration} min
+                    </div>
                   </div>
+                  {isMain && (
+                    <button
+                      onClick={() => handleDelete(s.id)}
+                      className="text-gray-600 hover:text-red-400 transition text-sm shrink-0"
+                    >
+                      Remove
+                    </button>
+                  )}
                 </div>
-                <button
-                  onClick={() => handleDelete(s.id)}
-                  className="text-gray-600 hover:text-red-400 transition text-sm"
-                >
-                  Remove
-                </button>
+                {isMain && branchLocations.length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-white/10 space-y-3">
+                    <p className="text-xs text-gray-500">Offer at locations (optional price override)</p>
+                    {branchLocations.map((loc) => {
+                      const on = isServiceAtLocation(s, loc.id);
+                      const draftKey = `${s.id}:${loc.id}`;
+                      const draft =
+                        priceDrafts[s.id]?.[loc.id] ??
+                        (on ? getOverride(s, loc.id) : "");
+                      return (
+                        <div key={loc.id} className="flex flex-wrap items-center gap-3 text-sm">
+                          <label className="flex items-center gap-2 text-gray-300">
+                            <input
+                              type="checkbox"
+                              checked={on}
+                              onChange={(e) => toggleLocation(s.id, loc.id, e.target.checked)}
+                              className="rounded border-white/20"
+                            />
+                            {loc.name}
+                          </label>
+                          {on && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-500 text-xs">$</span>
+                              <input
+                                type="text"
+                                placeholder="override"
+                                value={draft}
+                                onChange={(e) => {
+                                  setPriceDrafts((prev) => ({
+                                    ...prev,
+                                    [s.id]: { ...prev[s.id], [loc.id]: e.target.value },
+                                  }));
+                                }}
+                                onBlur={() => {
+                                  const v =
+                                    priceDrafts[s.id]?.[loc.id] ?? getOverride(s, loc.id);
+                                  savePrice(s.id, loc.id, v).catch((e) => setError(e.message));
+                                }}
+                                className="w-24 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             ))
           )}

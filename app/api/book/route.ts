@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { resolveBusinessForBooking } from "@/lib/booking-business";
+import { loadLocationCatalog } from "@/lib/location-catalog";
+import { utcFromYmdAndTime } from "@/lib/business-timezone";
 
 const adapter = new PrismaPg({
   connectionString: "postgresql://reservify_user:reservify123@localhost:5432/reservify"
@@ -11,19 +14,37 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const slug = searchParams.get("slug");
-    if (!slug) return NextResponse.json({ error: "Missing slug" }, { status: 400 });
+    const parentSlug = searchParams.get("parentSlug");
+    const locationSlug = searchParams.get("locationSlug");
 
-    const business = await prisma.business.findUnique({
-      where: { slug },
-      include: {
-        staff: { where: { active: true } },
-        services: { where: { active: true } },
-      }
+    if (!slug && !parentSlug) {
+      return NextResponse.json({ error: "Missing slug or parentSlug" }, { status: 400 });
+    }
+
+    const business = await resolveBusinessForBooking(prisma, {
+      slug: slug ?? undefined,
+      parentSlug: parentSlug ?? undefined,
+      locationSlug: locationSlug ?? undefined,
     });
 
-    if (!business) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!business) {
+      if (parentSlug) {
+        const siblings = await prisma.business.count({
+          where: { parentSlug, active: true },
+        });
+        if (siblings > 1 && !(locationSlug ?? "").trim()) {
+          return NextResponse.json(
+            { error: "This brand has multiple locations — add the location segment to the URL" },
+            { status: 400 }
+          );
+        }
+      }
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
-    return NextResponse.json(business);
+    const { staff, services } = await loadLocationCatalog(prisma, business.id);
+
+    return NextResponse.json({ ...business, staff, services });
   } catch (error) {
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
@@ -31,16 +52,52 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { slug, staffId, serviceId, date, time, clientName, clientPhone, clientEmail } = await req.json();
+    const body = await req.json();
+    const {
+      slug: bodySlug,
+      parentSlug,
+      locationSlug,
+      staffId,
+      serviceId,
+      date,
+      time,
+      clientName,
+      clientPhone,
+      clientEmail,
+    } = body;
 
-    if (!slug || !staffId || !serviceId || !date || !time || !clientName || !clientPhone) {
+    if (!staffId || !serviceId || !date || !time || !clientName || !clientPhone) {
       return NextResponse.json({ error: "All fields required" }, { status: 400 });
     }
 
-    const business = await prisma.business.findUnique({ where: { slug } });
+    if (!bodySlug && !parentSlug) {
+      return NextResponse.json({ error: "slug or parentSlug is required" }, { status: 400 });
+    }
+
+    const business = await resolveBusinessForBooking(prisma, {
+      slug: bodySlug ?? undefined,
+      parentSlug: parentSlug ?? undefined,
+      locationSlug: locationSlug ?? undefined,
+    });
+
     if (!business) return NextResponse.json({ error: "Business not found" }, { status: 404 });
 
-    const appointmentDate = new Date(`${date}T${time}:00`);
+    const staffOk = await prisma.staffAssignment.findFirst({
+      where: { businessId: business.id, staffId, active: true },
+    });
+    if (!staffOk) {
+      return NextResponse.json({ error: "Staff not available at this location" }, { status: 400 });
+    }
+
+    const svcLoc = await prisma.serviceLocation.findFirst({
+      where: { businessId: business.id, serviceId, active: true },
+      include: { service: true },
+    });
+    if (!svcLoc?.service?.active) {
+      return NextResponse.json({ error: "Service not available at this location" }, { status: 400 });
+    }
+
+    const appointmentDate = utcFromYmdAndTime(date, time);
 
     const appointment = await prisma.appointment.create({
       data: {
@@ -56,9 +113,10 @@ export async function POST(req: NextRequest) {
       }
     });
 
-    // Notificar pantalla en tiempo real
+    const displayRoomSlug = business.slug;
+
     if ((global as any).io) {
-      (global as any).io.to(`display-${slug}`).emit("new-appointment", appointment);
+      (global as any).io.to(`display-${displayRoomSlug}`).emit("new-appointment", appointment);
     }
 
     return NextResponse.json({ success: true, appointmentId: appointment.id });
