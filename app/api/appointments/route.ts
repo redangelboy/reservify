@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { utcFromYmdAndTime } from "@/lib/business-timezone";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { effectiveServicePrice } from "@/lib/location-catalog";
@@ -54,12 +55,18 @@ export async function PATCH(req: NextRequest) {
     const session = req.cookies.get("session")?.value;
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const { businessId } = JSON.parse(session);
-    const { id, status } = await req.json();
+    const { id, status, date, time, staffId, serviceId } = await req.json();
+    console.log("PATCH appointments:", { id, date, time, staffId, serviceId });
     const existing = await prisma.appointment.findFirst({
       where: { id, businessId },
     });
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    const appointment = await prisma.appointment.update({ where: { id }, data: { status } });
+    const updateData: any = { status };
+    if (date && time) updateData.date = utcFromYmdAndTime(date, time);
+    else if (date) updateData.date = new Date(date);
+    if (staffId) updateData.staffId = staffId;
+    if (serviceId) updateData.serviceId = serviceId;
+    const appointment = await prisma.appointment.update({ where: { id }, data: updateData });
     return NextResponse.json(appointment);
   } catch (error) {
     return NextResponse.json({ error: "Server error" }, { status: 500 });

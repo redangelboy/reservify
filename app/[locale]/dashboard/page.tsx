@@ -7,6 +7,8 @@ export default function DashboardPage() {
   const [session, setSession] = useState<any>(null);
   const [business, setBusiness] = useState<any>(null);
   const [appointments, setAppointments] = useState<any[]>([]);
+  const [editingApt, setEditingApt] = useState<any>(null);
+  const [editForm, setEditForm] = useState<any>({});
   const [stats, setStats] = useState({ total: 0, thisWeek: 0 });
   const [bookingPath, setBookingPath] = useState("");
   const [locations, setLocations] = useState<any[]>([]);
@@ -116,6 +118,27 @@ export default function DashboardPage() {
       console.error(e);
       setSwitchingLocation(false);
     }
+  };
+
+  const handleEdit = (apt: any) => {
+    setEditingApt(apt);
+    setEditForm({
+      date: new Date(apt.date).toISOString().slice(0, 10),
+      time: new Date(apt.date).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }),
+      staffId: apt.staffId,
+      serviceId: apt.serviceId,
+    });
+  };
+
+  const handleEditSave = async () => {
+    if (!editingApt) return;
+    await fetch("/api/appointments", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: editingApt.id, status: editingApt.status, date: editForm.date, time: editForm.time, staffId: editForm.staffId, serviceId: editForm.serviceId }),
+    });
+    setEditingApt(null);
+    fetchData();
   };
 
   const handleCancel = async (id: string) => {
@@ -327,6 +350,12 @@ export default function DashboardPage() {
                     <div className="flex items-center gap-3">
                       <span className="text-sm font-semibold text-green-400">${apt.service?.price}</span>
                       <button
+                        onClick={() => handleEdit(apt)}
+                        className="text-xs text-gray-400 hover:text-white transition border border-white/10 px-3 py-1 rounded-full"
+                      >
+                        Edit
+                      </button>
+                      <button
                         onClick={() => handleCancel(apt.id)}
                         className="text-xs text-gray-600 hover:text-red-400 transition border border-white/10 px-3 py-1 rounded-full"
                       >
@@ -341,6 +370,46 @@ export default function DashboardPage() {
         )}
 
       </div>
+    {editingApt && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-white/10 rounded-2xl p-6 w-full max-w-md flex flex-col gap-4">
+            <h2 className="text-lg font-semibold">Edit Appointment</h2>
+            <div className="text-sm text-gray-400">{editingApt.clientName} — {editingApt.service?.name}</div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-400">Date</label>
+              <input type="date" value={editForm.date}
+                onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
+                className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30 transition" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-400">Time</label>
+              <input type="time" value={editForm.time}
+                onChange={(e) => setEditForm({ ...editForm, time: e.target.value })}
+                className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30 transition" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-400">Barber</label>
+              <select value={editForm.staffId}
+                onChange={(e) => setEditForm({ ...editForm, staffId: e.target.value })}
+                className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30 transition">
+                {appointments.filter((a: any, i: number, arr: any[]) => arr.findIndex((x: any) => x.staffId === a.staffId) === i).map((a: any) => (
+                  <option key={a.staffId} value={a.staffId} className="bg-gray-900">{a.staff?.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-3 mt-2">
+              <button onClick={handleEditSave}
+                className="flex-1 bg-white text-black py-3 rounded-xl text-sm font-semibold hover:bg-gray-200 transition">
+                Save
+              </button>
+              <button onClick={() => setEditingApt(null)}
+                className="flex-1 border border-white/10 py-3 rounded-xl text-sm hover:bg-white/5 transition">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
