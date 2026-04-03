@@ -9,6 +9,7 @@ export default function StaffPage() {
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
 
   const fetchAll = async () => {
     const [staffRes, locRes, bizRes] = await Promise.all([
@@ -91,6 +92,29 @@ export default function StaffPage() {
     }
   };
 
+  const handlePhotoUpload = async (staffId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingId(staffId);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      await fetch("/api/staff", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: staffId, photo: data.url }),
+      });
+      fetchAll();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setUploadingId(null);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-black text-white">
       <nav className="border-b border-white/10 px-8 py-4 flex items-center gap-4">
@@ -144,9 +168,25 @@ export default function StaffPage() {
               <div key={s.id} className="border border-white/10 rounded-2xl px-6 py-4 hover:border-white/20 transition">
                 <div className="flex justify-between items-start gap-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-sm font-semibold">
-                      {s.name.charAt(0).toUpperCase()}
-                    </div>
+                    <label className="cursor-pointer relative group">
+                      <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white/20 bg-white/10 flex items-center justify-center">
+                        {s.photo ? (
+                          <img src={s.photo} alt={s.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-sm font-semibold">{s.name.charAt(0).toUpperCase()}</span>
+                        )}
+                      </div>
+                      {isMain && (
+                        <>
+                          <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                            <span className="text-white text-xs">{uploadingId === s.id ? "..." : "📷"}</span>
+                          </div>
+                          <input type="file" accept="image/*" className="hidden"
+                            onChange={(e) => handlePhotoUpload(s.id, e)}
+                            disabled={uploadingId === s.id} />
+                        </>
+                      )}
+                    </label>
                     <span className="font-medium">{s.name}</span>
                   </div>
                   {isMain && (
@@ -165,7 +205,30 @@ export default function StaffPage() {
                       {branchLocations.map((loc) => {
                         const ids: string[] = s.assignedLocationIds || [];
                         const checked = ids.includes(loc.id);
-                        return (
+                        const handlePhotoUpload = async (staffId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingId(staffId);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      await fetch("/api/staff", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: staffId, photo: data.url }),
+      });
+      fetchAll();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setUploadingId(null);
+    }
+  };
+
+  return (
                           <label key={loc.id} className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
                             <input
                               type="checkbox"

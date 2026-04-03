@@ -133,3 +133,23 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const session = req.cookies.get("session")?.value;
+    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const { ownerId, businessId: sessionBusinessId } = JSON.parse(session);
+    const mainId = await getMainBusinessIdForOwner(prisma, ownerId);
+    if (!mainId) return NextResponse.json({ error: "No business found" }, { status: 400 });
+
+    const { id, photo } = await req.json();
+    const row = await prisma.staff.findFirst({ where: { id, businessId: mainId } });
+    if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    const updated = await prisma.staff.update({ where: { id }, data: { photo } });
+    return NextResponse.json(updated);
+  } catch (error) {
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
+  }
+}

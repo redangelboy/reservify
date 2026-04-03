@@ -68,7 +68,13 @@ export default function DisplayPage() {
   const byStaff = staff.map((s: any) => ({
     ...s,
     appointments: appointments
-      .filter((a: any) => a.staffId === s.id && new Date(a.date) >= now)
+      .filter((a: any) => {
+        if (a.staffId !== s.id) return false;
+        const start = new Date(a.date);
+        const duration = a.service?.duration || 30;
+        const end = new Date(start.getTime() + duration * 60 * 1000);
+        return end > now;
+      })
       .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime()),
   }));
 
@@ -119,12 +125,14 @@ export default function DisplayPage() {
               ) : (
                 s.appointments.map((apt: any) => {
                   const aptTime = new Date(apt.date);
-                  const isPast = aptTime < now;
-                  const isNext = !isPast && s.appointments.findIndex((a: any) => new Date(a.date) >= now) === s.appointments.indexOf(apt);
+                  const duration = apt.service?.duration || 30;
+                  const aptEnd = new Date(aptTime.getTime() + duration * 60 * 1000);
+                  const isInProgress = aptTime <= now && aptEnd > now;
+                  const isNext = !isInProgress && s.appointments.findIndex((a: any) => new Date(a.date) >= now) === s.appointments.indexOf(apt);
                   return (
                     <div key={apt.id} className={`rounded-xl px-4 py-3 border transition ${
+                      isInProgress ? "bg-green-500/20 border-green-500/50" :
                       isNext ? "bg-green-500/10 border-green-500/30" :
-                      isPast ? "bg-white/3 border-white/5 opacity-40" :
                       "bg-white/5 border-white/10"
                     }`}>
                       <div className="flex justify-between items-start">
@@ -133,11 +141,11 @@ export default function DisplayPage() {
                           <div className="text-xs text-gray-400 mt-0.5">{apt.service?.name}</div>
                         </div>
                         <div className="text-right">
-                          <div className={`font-mono font-bold text-lg ${isNext ? "text-green-400" : isPast ? "text-gray-600" : "text-white"}`}>
+                          <div className={`font-mono font-bold text-lg ${isNext || isInProgress ? "text-green-400" : "text-white"}`}>
                             {formatTime(apt.date)}
                           </div>
                           {isNext && <div className="text-xs text-green-500 font-medium">NEXT</div>}
-                          {isPast && <div className="text-xs text-gray-600">Done</div>}
+                          
                         </div>
                       </div>
                     </div>
