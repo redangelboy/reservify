@@ -28,11 +28,11 @@ export async function POST(req: NextRequest) {
 
     // Obtener nombre del negocio completo (main + sucursal)
     let businessDisplayName = business.name;
-    if (business.parentSlug) {
+    if (business.parentSlug && business.locationSlug) {
       const mainBusiness = await prisma.business.findFirst({
         where: { slug: business.parentSlug }
       });
-      if (mainBusiness) {
+      if (mainBusiness && mainBusiness.name !== business.name) {
         businessDisplayName = `${mainBusiness.name} - ${business.name}`;
       }
     }

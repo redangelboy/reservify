@@ -4,6 +4,34 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { resolveBusinessForBooking } from "@/lib/booking-business";
 import { loadLocationCatalog } from "@/lib/location-catalog";
 import { utcFromYmdAndTime } from "@/lib/business-timezone";
+
+// Rate limiting en memoria: 3 reservaciones por día por IP
+const ipBookingCount = new Map<string, { count: number; date: string }>();
+
+function checkRateLimit(ip: string): boolean {
+  const today = new Date().toISOString().split("T")[0];
+  const entry = ipBookingCount.get(ip);
+  if (!entry || entry.date !== today) {
+    ipBookingCount.set(ip, { count: 1, date: today });
+    return true;
+  }
+  if (entry.count >= 3) return false;
+  entry.count++;
+  return true;
+}
+
+async function verifyRecaptcha(token: string): Promise<boolean> {
+  if (!token) return false;
+  const secret = process.env.RECAPTCHA_SECRET_KEY;
+  if (!secret) return true; // si no hay secret configurado, skip
+  const res = await fetch("https://www.google.com/recaptcha/api/siteverify", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `secret=${secret}&response=${token}`,
+  });
+  const data = await res.json();
+  return data.success && data.score >= 0.5;
+}
 import { sendBookingConfirmation } from "@/lib/email/send";
 
 const adapter = new PrismaPg({
@@ -54,6 +82,17 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    const { recaptchaToken } = body;
+    const captchaOk = await verifyRecaptcha(recaptchaToken || "");
+    if (!captchaOk) {
+      return NextResponse.json({ error: "Security check failed. Please try again." }, { status: 403 });
+    }
+
+    // Rate limit por IP
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "unknown";
+    if (!checkRateLimit(ip)) {
+      return NextResponse.json({ error: "Too many bookings today. Please try again tomorrow." }, { status: 429 });
+    }
     const {
       slug: bodySlug,
       parentSlug,
@@ -100,6 +139,30 @@ export async function POST(req: NextRequest) {
 
     const appointmentDate = utcFromYmdAndTime(date, time);
 
+    // Checar overlap considerando duración del servicio
+    const service = await prisma.service.findUnique({ where: { id: serviceId } });
+    const serviceDuration = service?.duration || 30;
+    const appointmentEnd = new Date(appointmentDate.getTime() + serviceDuration * 60000);
+
+    const conflict = await prisma.appointment.findFirst({
+      where: {
+        staffId,
+        status: { not: "cancelled" },
+        AND: [
+          { date: { lt: appointmentEnd } },
+          { date: { gte: new Date(appointmentDate.getTime() - serviceDuration * 60000) } }
+        ]
+      },
+      include: { service: true }
+    });
+
+    if (conflict) {
+      const conflictEnd = new Date(conflict.date.getTime() + (conflict.service?.duration || 30) * 60000);
+      if (conflict.date < appointmentEnd && conflictEnd > appointmentDate) {
+        return NextResponse.json({ error: "This time slot is no longer available. Please choose a different time." }, { status: 409 });
+      }
+    }
+
     const appointment = await prisma.appointment.create({
       data: {
         businessId: business.id,
@@ -108,6 +171,7 @@ export async function POST(req: NextRequest) {
         clientName,
         clientPhone,
         clientEmail: clientEmail || null,
+        clientIp: ip || null,
         date: appointmentDate,
         status: "confirmed",
         source: "web",

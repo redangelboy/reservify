@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { NextIntlClientProvider } from "next-intl";
+import RecaptchaProvider from "./recaptcha-provider";
 import { getMessages } from "next-intl/server";
 import "./globals.css";
 
@@ -22,7 +23,9 @@ export default async function LocaleLayout({
     <html lang={locale}>
       <body>
         <NextIntlClientProvider messages={messages}>
-          {children}
+          <RecaptchaProvider>
+            {children}
+          </RecaptchaProvider>
         </NextIntlClientProvider>
       </body>
     </html>

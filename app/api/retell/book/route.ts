@@ -61,6 +61,16 @@ export async function POST(req: NextRequest) {
       resolvedTime = `${String(hours).padStart(2, "0")}:${minutes}`;
     }
 
+    // Si la hora no tiene AM/PM y es ambigua, inferir por hora actual
+    if (/^\d{1,2}(:\d{2})?$/.test(time.trim())) {
+      const hour = parseInt(time.split(":")[0]);
+      const nowHour = new Date().getHours();
+      // Si la hora es <= 12 y ya pasamos del mediodía, asumir PM
+      if (hour < 12 && nowHour >= 12) {
+        resolvedTime = `${String(hour + 12).padStart(2, "0")}:${time.includes(":") ? time.split(":")[1] : "00"}`;
+      }
+    }
+
     // Buscar el negocio
     const business = await prisma.business.findFirst({
       where: { slug, active: true }
@@ -101,6 +111,45 @@ export async function POST(req: NextRequest) {
 
     // Crear el appointment
     const appointmentDate = utcFromYmdAndTime(resolvedDate, resolvedTime);
+
+    // Validar que la cita no sea en el pasado
+    const now = new Date();
+    if (appointmentDate < now) {
+      return NextResponse.json({
+        success: false,
+        message: `That time has already passed. Please choose a future time.`
+      }, { status: 400 });
+    }
+
+    // Checar overlap considerando duración del servicio
+    const serviceDuration = selectedService.duration || 30;
+    const appointmentEnd = new Date(appointmentDate.getTime() + serviceDuration * 60000);
+
+    const conflict = await prisma.appointment.findFirst({
+      where: {
+        staffId: selectedStaff.id,
+        status: { not: "cancelled" },
+        AND: [
+          { date: { lt: appointmentEnd } },
+          {
+            date: {
+              gte: new Date(appointmentDate.getTime() - serviceDuration * 60000)
+            }
+          }
+        ]
+      },
+      include: { service: true }
+    });
+
+    if (conflict) {
+      const conflictEnd = new Date(conflict.date.getTime() + (conflict.service?.duration || 30) * 60000);
+      if (conflict.date < appointmentEnd && conflictEnd > appointmentDate) {
+        return NextResponse.json({
+          success: false,
+          message: `${selectedStaff.name} is busy at that time. Please choose a different time or barber.`
+        }, { status: 409 });
+      }
+    }
 
     const appointment = await prisma.appointment.create({
       data: {

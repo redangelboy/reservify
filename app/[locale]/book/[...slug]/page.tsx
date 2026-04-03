@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
+import { useGoogleReCaptcha } from "react-google-recaptcha-v3";
 import { useParams } from "next/navigation";
 import { DateTime } from "luxon";
 import { BUSINESS_TIMEZONE } from "@/lib/business-timezone";
@@ -12,6 +13,7 @@ function getNextBusinessDays(count: number): DateTime[] {
 }
 
 export default function BookPage() {
+  const { executeRecaptcha } = useGoogleReCaptcha();
   const params = useParams();
   const segments = useMemo(() => {
     const raw = params.slug as string | string[] | undefined;
@@ -102,6 +104,10 @@ export default function BookPage() {
     setLoading(true);
     setError("");
     try {
+      let recaptchaToken = "";
+      if (executeRecaptcha) {
+        recaptchaToken = await executeRecaptcha("book_appointment");
+      }
       const res = await fetch("/api/book", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -113,6 +119,7 @@ export default function BookPage() {
           date: selectedDate,
           time: selectedTime,
           ...form,
+          recaptchaToken,
         }),
       });
       const data = await res.json();

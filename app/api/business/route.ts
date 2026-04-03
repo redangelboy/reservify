@@ -39,10 +39,10 @@ export async function PATCH(req: NextRequest) {
     const session = req.cookies.get("session")?.value;
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const { businessId } = JSON.parse(session);
-    const { name, phone, address, primaryColor, secondaryColor, logo } = await req.json();
+    const { name, phone, address, primaryColor, secondaryColor, logo, retellPhoneNumber } = await req.json();
     const business = await prisma.business.update({
       where: { id: businessId },
-      data: { name, phone, address, primaryColor, secondaryColor, logo },
+      data: { name, phone, address, primaryColor, secondaryColor, logo, retellPhoneNumber: retellPhoneNumber || null },
     });
     return NextResponse.json(business);
   } catch (error) {

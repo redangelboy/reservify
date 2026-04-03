@@ -93,8 +93,8 @@ export default function DisplayPage() {
           )}
           <div>
             <h1 className="text-4xl font-bold tracking-tight">
-              {business.parentSlug ? `${business.parentName || business.name}` : business.name}
-              {business.parentSlug && business.name ? ` - ${business.name}` : ""}
+              {business.parentSlug && business.locationSlug ? `${business.parentName || business.name}` : business.name}
+              {business.parentSlug && business.locationSlug && business.name ? ` - ${business.name}` : ""}
             </h1>
             <p className="text-gray-400 mt-1">{DAYS[now.getDay()]}, {now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</p>
           </div>

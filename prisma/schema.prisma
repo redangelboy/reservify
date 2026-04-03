@@ -109,6 +109,7 @@ model Appointment {
   clientName  String
   clientPhone String
   clientEmail String?
+  clientIp    String?
   date        DateTime
   status      String   @default("confirmed")
   source      String   @default("web")

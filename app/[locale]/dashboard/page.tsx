@@ -9,6 +9,7 @@ export default function DashboardPage() {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [editingApt, setEditingApt] = useState<any>(null);
   const [editForm, setEditForm] = useState<any>({});
+  const [staffList, setStaffList] = useState<any[]>([]);
   const [stats, setStats] = useState({ total: 0, thisWeek: 0 });
   const [bookingPath, setBookingPath] = useState("");
   const [locations, setLocations] = useState<any[]>([]);
@@ -58,6 +59,9 @@ export default function DashboardPage() {
       }
     } else {
       const aptsRes = await fetch("/api/appointments");
+      const staffRes = await fetch("/api/staff");
+      const staffData = await staffRes.json();
+      if (staffData.staff) setStaffList(staffData.staff);
       const aptsData = await aptsRes.json();
       if (aptsData.appointments) {
         setAppointments(aptsData.appointments);
@@ -392,8 +396,8 @@ export default function DashboardPage() {
               <select value={editForm.staffId}
                 onChange={(e) => setEditForm({ ...editForm, staffId: e.target.value })}
                 className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30 transition">
-                {appointments.filter((a: any, i: number, arr: any[]) => arr.findIndex((x: any) => x.staffId === a.staffId) === i).map((a: any) => (
-                  <option key={a.staffId} value={a.staffId} className="bg-gray-900">{a.staff?.name}</option>
+                {staffList.map((s: any) => (
+                  <option key={s.id} value={s.id} className="bg-gray-900">{s.name}</option>
                 ))}
               </select>
             </div>

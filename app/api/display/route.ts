@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { loadLocationCatalog } from "@/lib/location-catalog";
+import { businessDayUtcRange } from "@/lib/business-timezone";
 
 const adapter = new PrismaPg({
   connectionString: process.env.DATABASE_URL!
@@ -35,17 +36,15 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const business = { ...row, staff, parentName, logo };
+    const business = { ...row, staff, parentName, logo, locationSlug: row.locationSlug };
 
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
+    const todayChicago = new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+    const { start: startUTC, end: endUTC } = businessDayUtcRange(todayChicago);
 
     const appointments = await prisma.appointment.findMany({
       where: {
         businessId: business.id,
-        date: { gte: startOfDay, lte: endOfDay },
+        date: { gte: startUTC, lte: endUTC },
         status: { not: "cancelled" }
       },
       include: { service: true, staff: true },

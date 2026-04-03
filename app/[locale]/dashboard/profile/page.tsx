@@ -4,13 +4,15 @@ import { bookingPathForBusiness } from "@/lib/booking-path";
 
 export default function ProfilePage() {
   const [form, setForm] = useState({
-    name: "", phone: "", address: "", primaryColor: "#000000", secondaryColor: "#ffffff", logo: ""
+    name: "", phone: "", address: "", primaryColor: "#000000", secondaryColor: "#ffffff", logo: "", retellPhoneNumber: ""
   });
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [slug, setSlug] = useState("");
+  const [isMainBusiness, setIsMainBusiness] = useState(false);
+  const [hasLocations, setHasLocations] = useState(false);
   const [bookingPath, setBookingPath] = useState("");
 
   useEffect(() => {
@@ -25,9 +27,14 @@ export default function ProfilePage() {
             primaryColor: data.primaryColor || "#000000",
             secondaryColor: data.secondaryColor || "#ffffff",
             logo: data.logo || "",
+            retellPhoneNumber: data.retellPhoneNumber || "",
           });
           setSlug(data.slug || "");
           const list = Array.isArray(locs) ? locs : [];
+          const locationCount = list.filter((l: any) => l.parentSlug === data.slug).length;
+          setHasLocations(locationCount > 0);
+          setHasLocations(locationCount > 0);
+          setIsMainBusiness(!data.parentSlug);
           const parent = data.parentSlug ?? data.slug;
           const countForParent = list.filter(
             (l: any) => (l.parentSlug ?? l.slug) === parent
@@ -130,6 +137,15 @@ export default function ProfilePage() {
               placeholder="123 Main St, Dallas TX"
               className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30 transition" />
           </div>
+          {(!isMainBusiness || !hasLocations) && (
+            <div className="flex flex-col gap-1">
+              <label className="text-sm text-gray-400">Retell AI Phone Number</label>
+              <input type="tel" value={form.retellPhoneNumber} onChange={(e) => setForm({ ...form, retellPhoneNumber: e.target.value })}
+                placeholder="+19453072113"
+                className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30 transition" />
+              <p className="text-xs text-gray-500">Phone number assigned by Retell AI for this location</p>
+            </div>
+          )}
           <div className="flex gap-4">
             <div className="flex flex-col gap-1 flex-1">
               <label className="text-sm text-gray-400">Primary color</label>

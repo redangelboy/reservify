@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const { businessId } = JSON.parse(session);
     const schedules = await prisma.schedule.findMany({
-      where: { businessId },
+      where: { businessId, active: true },
       include: { staff: true },
       orderBy: [{ staffId: "asc" }, { dayOfWeek: "asc" }],
     });

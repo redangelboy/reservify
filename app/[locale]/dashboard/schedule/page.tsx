@@ -6,10 +6,12 @@ const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", 
 export default function SchedulePage() {
   const [staff, setStaff] = useState<any[]>([]);
   const [schedules, setSchedules] = useState<any[]>([]);
-  const [selectedStaff, setSelectedStaff] = useState("");
-  const [form, setForm] = useState({ dayOfWeek: "1", startTime: "09:00", endTime: "18:00" });
+  const [selectedStaff, setSelectedStaff] = useState<string[]>([]);
+  const [selectedDays, setSelectedDays] = useState<number[]>([]);
+  const [form, setForm] = useState({ startTime: "09:00", endTime: "18:00" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   const fetchData = async () => {
     const [staffRes, schedRes] = await Promise.all([
@@ -18,24 +20,50 @@ export default function SchedulePage() {
     ]);
     const staffData = await staffRes.json();
     const schedData = await schedRes.json();
-    if (Array.isArray(staffData)) setStaff(staffData);
+    if (Array.isArray(staffData.staff)) setStaff(staffData.staff);
+    else if (Array.isArray(staffData)) setStaff(staffData);
     if (Array.isArray(schedData)) setSchedules(schedData);
   };
 
   useEffect(() => { fetchData(); }, []);
 
+  const toggleStaff = (id: string) => {
+    setSelectedStaff(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const toggleDay = (day: number) => {
+    setSelectedDays(prev => prev.includes(day) ? prev.filter(x => x !== day) : [...prev, day]);
+  };
+
+  const toggleAllStaff = () => {
+    setSelectedStaff(selectedStaff.length === staff.length ? [] : staff.map(s => s.id));
+  };
+
+  const toggleAllDays = () => {
+    setSelectedDays(selectedDays.length === 7 ? [] : [0, 1, 2, 3, 4, 5, 6]);
+  };
+
   const handleAdd = async () => {
-    if (!selectedStaff) { setError("Select a staff member"); return; }
+    if (selectedStaff.length === 0) { setError("Select at least one staff member"); return; }
+    if (selectedDays.length === 0) { setError("Select at least one day"); return; }
     setLoading(true);
     setError("");
+    setSuccess("");
     try {
-      const res = await fetch("/api/schedule", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ staffId: selectedStaff, ...form }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      const promises = [];
+      for (const staffId of selectedStaff) {
+        for (const dayOfWeek of selectedDays) {
+          promises.push(fetch("/api/schedule", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ staffId, dayOfWeek: String(dayOfWeek), ...form }),
+          }));
+        }
+      }
+      await Promise.all(promises);
+      setSuccess(`✓ Schedule saved for ${selectedStaff.length} staff × ${selectedDays.length} days`);
+      setSelectedStaff([]);
+      setSelectedDays([]);
       fetchData();
     } catch (err: any) {
       setError(err.message);
@@ -67,34 +95,80 @@ export default function SchedulePage() {
       <div className="max-w-3xl mx-auto px-8 py-10">
         <h1 className="text-2xl font-bold mb-2">Manage Schedule</h1>
         <p className="text-gray-400 text-sm mb-8">
-          Set working hours for each staff member. Times are US Central (America/Chicago — CST/CDT).
+          Set working hours for each staff member. Times are US Central (America/Chicago).
         </p>
         <div className="border border-white/10 rounded-2xl p-6 mb-8">
           <h2 className="font-semibold mb-4">Add working hours</h2>
-          <div className="flex flex-col gap-3">
-            <select value={selectedStaff} onChange={(e) => setSelectedStaff(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30 transition">
-              <option value="">Select staff member</option>
-              {staff.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
-            </select>
-            <select value={form.dayOfWeek} onChange={(e) => setForm({ ...form, dayOfWeek: e.target.value })} className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30 transition">
-              {DAYS.map((day, i) => (<option key={i} value={i}>{day}</option>))}
-            </select>
+          <div className="flex flex-col gap-4">
+
+            {/* Staff selector */}
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <label className="text-sm text-gray-400">Staff members</label>
+                <button onClick={toggleAllStaff} className="text-xs text-green-400 hover:text-green-300 transition">
+                  {selectedStaff.length === staff.length ? "Deselect all" : "Select all"}
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {staff.map((s) => (
+                  <button key={s.id} onClick={() => toggleStaff(s.id)}
+                    className={`px-3 py-1.5 rounded-xl text-sm font-medium transition border ${
+                      selectedStaff.includes(s.id)
+                        ? "bg-white text-black border-white"
+                        : "bg-white/5 text-gray-400 border-white/10 hover:border-white/30"
+                    }`}>
+                    {s.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Day selector */}
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <label className="text-sm text-gray-400">Days</label>
+                <button onClick={toggleAllDays} className="text-xs text-green-400 hover:text-green-300 transition">
+                  {selectedDays.length === 7 ? "Deselect all" : "Select all"}
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {DAYS.map((day, i) => (
+                  <button key={i} onClick={() => toggleDay(i)}
+                    className={`px-3 py-1.5 rounded-xl text-sm font-medium transition border ${
+                      selectedDays.includes(i)
+                        ? "bg-white text-black border-white"
+                        : "bg-white/5 text-gray-400 border-white/10 hover:border-white/30"
+                    }`}>
+                    {day.slice(0, 3)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Time range */}
             <div className="flex gap-3">
               <div className="flex-1">
                 <label className="text-xs text-gray-400 mb-1 block">Start time</label>
-                <input type="time" value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30 transition" />
+                <input type="time" value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30 transition" />
               </div>
               <div className="flex-1">
                 <label className="text-xs text-gray-400 mb-1 block">End time</label>
-                <input type="time" value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30 transition" />
+                <input type="time" value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30 transition" />
               </div>
             </div>
+
             {error && <p className="text-red-400 text-sm">{error}</p>}
-            <button onClick={handleAdd} disabled={loading} className="bg-white text-black py-3 rounded-xl text-sm font-semibold hover:bg-gray-200 transition disabled:opacity-50">
-              {loading ? "Saving..." : "Save hours"}
+            {success && <p className="text-green-400 text-sm">{success}</p>}
+            <button onClick={handleAdd} disabled={loading}
+              className="bg-white text-black py-3 rounded-xl text-sm font-semibold hover:bg-gray-200 transition disabled:opacity-50">
+              {loading ? "Saving..." : `Save hours${selectedStaff.length > 0 && selectedDays.length > 0 ? ` (${selectedStaff.length} staff × ${selectedDays.length} days)` : ""}`}
             </button>
           </div>
         </div>
+
+        {/* Current schedules */}
         <div className="flex flex-col gap-6">
           {byStaff.map((s) => (
             <div key={s.id} className="border border-white/10 rounded-2xl p-6">
