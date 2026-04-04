@@ -46,7 +46,8 @@ export default function DashboardPage() {
     const locsData = await locsRes.json();
     const biz = await bizRes.json();
 
-    if (sessionData.businessId) setSession(sessionData);
+    if (!sessionData.businessId) { window.location.href = "/en/login"; return; }
+    setSession(sessionData);
     if (Array.isArray(locsData)) setLocations(locsData);
     if (biz?.id) setBusiness(biz);
 

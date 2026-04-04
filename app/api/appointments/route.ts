@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { notifyCancelRequest } from "@/lib/notify";
 import { utcFromYmdAndTime } from "@/lib/business-timezone";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
@@ -72,7 +73,31 @@ export async function PATCH(req: NextRequest) {
     else if (date) updateData.date = new Date(date);
     if (staffId) updateData.staffId = staffId;
     if (serviceId) updateData.serviceId = serviceId;
-    const appointment = await prisma.appointment.update({ where: { id }, data: updateData });
+    const appointment = await prisma.appointment.update({ where: { id }, data: updateData, include: { staff: true, service: true, business: { include: { owner: true } } } });
+
+    // Notificar al owner si es cancel_requested
+    if (status === "cancel_requested" && cancelReason) {
+      try {
+        const biz = appointment.business as any;
+        const owner = biz?.owner;
+        console.log("NOTIFY DEBUG:", { bizId: biz?.id, ownerEmail: owner?.email, reason: cancelReason });
+        if (owner?.email) {
+          await notifyCancelRequest({
+            ownerEmail: owner.email,
+            ownerName: owner.name,
+            businessName: biz.name,
+            clientName: appointment.clientName,
+            serviceName: (appointment.service as any)?.name || "Service",
+            staffName: (appointment.staff as any)?.name || "Staff",
+            date: appointment.date,
+            reason: cancelReason,
+          });
+        }
+      } catch (e) {
+        console.error("Email notify error:", e);
+      }
+    }
+
     return NextResponse.json(appointment);
   } catch (error) {
     return NextResponse.json({ error: "Server error" }, { status: 500 });
