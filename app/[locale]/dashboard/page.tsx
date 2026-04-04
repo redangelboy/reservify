@@ -21,9 +21,12 @@ export default function DashboardPage() {
   const [newUser, setNewUser] = useState({ name: "", email: "", password: "", role: "STAFF", staffId: "" });
   const [teamLoading, setTeamLoading] = useState(false);
   const [teamError, setTeamError] = useState("");
+  const [editingUser, setEditingUser] = useState<any>(null);
+  const [editUserForm, setEditUserForm] = useState({ name: "", role: "STAFF", staffId: "" });
   const [cancelRequestApt, setCancelRequestApt] = useState<any>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelRequests, setCancelRequests] = useState<any[]>([]);
+  const [locationFilter, setLocationFilter] = useState<string>("all");
 
   /** Prefer server `isMainBusiness` (matches canonical main row even when locationSlug was set to "main"). */
   function isMainBusinessPayload(biz: any) {
@@ -51,6 +54,12 @@ export default function DashboardPage() {
       console.log("[dashboard] business.locationSlug =", biz.locationSlug, "| isMainBusiness =", biz.isMainBusiness);
     }
 
+    // Cargar staff list siempre
+    const staffRes2 = await fetch("/api/staff");
+    const staffData2 = await staffRes2.json();
+    if (staffData2.staff) setStaffList(staffData2.staff);
+    else if (Array.isArray(staffData2)) setStaffList(staffData2);
+
     // Cargar team users y solicitudes de cancelación si es owner
     if (sessionData?.ownerId) {
       const teamRes = await fetch("/api/staff-users?businessId=" + sessionData.businessId);
@@ -67,7 +76,8 @@ export default function DashboardPage() {
     const main = biz ? isMainBusinessFromPayload(biz) : false;
 
     if (multiLocation && main) {
-      const cons = await fetch("/api/appointments/consolidated");
+      const locParam = locationFilter !== "all" ? `?locationId=${locationFilter}` : "";
+      const cons = await fetch(`/api/appointments/consolidated${locParam}`);
       const c = await cons.json();
       if (cons.ok && Array.isArray(c.appointments)) {
         setAppointments(c.appointments);
@@ -81,6 +91,7 @@ export default function DashboardPage() {
       const staffRes = await fetch("/api/staff");
       const staffData = await staffRes.json();
       if (staffData.staff) setStaffList(staffData.staff);
+      else if (Array.isArray(staffData)) setStaffList(staffData);
       const aptsData = await aptsRes.json();
       if (aptsData.appointments) {
         setAppointments(aptsData.appointments);
@@ -91,7 +102,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [locationFilter]);
 
   useEffect(() => {
     const onDocMouseDown = (e: MouseEvent) => {
@@ -341,14 +352,58 @@ export default function DashboardPage() {
         </div>
 
         {multiLocation && isMain ? (
-          <div className="border border-white/10 rounded-2xl p-8 mb-10">
-            <h2 className="text-lg font-semibold mb-2">Consolidated view</h2>
-            <p className="text-gray-400 text-sm mb-4">
-              Schedule, display, and per-location bookings are managed when you switch to a location above.
-            </p>
-            <a href="/en/dashboard/reports" className="inline-block text-sm text-white border border-white/10 px-4 py-2 rounded-full hover:bg-white/5 transition">
-              Open consolidated reports →
-            </a>
+          <div className="mb-10">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-semibold">Today&apos;s appointments</h2>
+              <div className="flex items-center gap-3">
+                <select
+                  value={locationFilter}
+                  onChange={e => setLocationFilter(e.target.value)}
+                  className="bg-black border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none"
+                >
+                  <option value="all">All locations</option>
+                  {locations.filter((loc: any) => loc.locationSlug && loc.locationSlug !== "" && loc.locationSlug !== "main").map((loc: any) => (
+                    <option key={loc.id} value={loc.id}>{loc.name}</option>
+                  ))}
+                </select>
+                <a href="/en/dashboard/reports" className="text-sm text-gray-400 hover:text-white transition border border-white/10 px-4 py-2 rounded-full">
+                  Reports →
+                </a>
+              </div>
+            </div>
+            {appointments.length === 0 ? (
+              <div className="border border-white/10 rounded-2xl p-8 text-center">
+                <div className="text-4xl mb-3">📅</div>
+                <p className="text-gray-400 text-sm">No appointments today</p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {appointments.map((apt: any) => (
+                  <div key={apt.id} className="border border-white/10 rounded-2xl px-6 py-4 flex justify-between items-center hover:border-white/20 transition">
+                    <div className="flex items-center gap-4">
+                      <div className={`text-2xl font-mono font-bold w-16 ${apt.status === "cancel_requested" ? "text-yellow-400" : "text-green-400"}`}>
+                        {formatTime(apt.date)}
+                      </div>
+                      <div>
+                        <div className="font-semibold">{apt.clientName}</div>
+                        <div className="text-sm text-gray-400">{apt.service?.name} · with {apt.staff?.name}</div>
+                        <div className="text-xs text-gray-600 mt-0.5">{apt.business?.name}</div>
+                        {apt.status === "cancel_requested" && (
+                          <div className="text-xs text-yellow-400 mt-0.5">⏳ Cancel requested</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-semibold text-green-400">${apt.service?.price}</span>
+                      <button
+                        onClick={() => handleCancel(apt.id)}
+                        className="text-xs text-gray-600 hover:text-red-400 transition border border-white/10 px-3 py-1 rounded-full"
+                      >Cancel</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <div id="today">
@@ -530,6 +585,12 @@ export default function DashboardPage() {
                       {u.role}
                     </span>
                     <button
+                      onClick={() => { setEditingUser(u); setEditUserForm({ name: u.name, role: u.role, staffId: u.staffId || "" }); }}
+                      className="text-xs text-gray-400 hover:text-white transition border border-white/10 px-3 py-1 rounded-full"
+                    >
+                      Edit
+                    </button>
+                    <button
                       onClick={async () => { await fetch("/api/staff-users", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: u.id }) }); fetchData(); }}
                       className="text-xs text-gray-600 hover:text-red-400 transition border border-white/10 px-3 py-1 rounded-full"
                     >
@@ -540,6 +601,51 @@ export default function DashboardPage() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Modal editar team member */}
+      {editingUser && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-white/10 rounded-2xl p-6 w-full max-w-md flex flex-col gap-4">
+            <h2 className="text-lg font-semibold">Edit team member</h2>
+            <div className="text-sm text-gray-400">{editingUser.email}</div>
+            <input placeholder="Full name" value={editUserForm.name}
+              onChange={e => setEditUserForm({ ...editUserForm, name: e.target.value })}
+              className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30" />
+            <select value={editUserForm.role}
+              onChange={e => setEditUserForm({ ...editUserForm, role: e.target.value })}
+              className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30">
+              <option value="STAFF" className="bg-gray-900">Staff — sees own appointments only</option>
+              <option value="ADMIN" className="bg-gray-900">Admin — manages all appointments</option>
+            </select>
+            <select value={editUserForm.staffId}
+              onChange={e => setEditUserForm({ ...editUserForm, staffId: e.target.value })}
+              className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30">
+              <option value="" className="bg-gray-900">No barber linked</option>
+              {staffList.map((s: any) => (
+                <option key={s.id} value={s.id} className="bg-gray-900">{s.name}</option>
+              ))}
+            </select>
+            <div className="flex gap-3 mt-2">
+              <button
+                onClick={async () => {
+                  const res = await fetch("/api/staff-users", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: editingUser.id, name: editUserForm.name, role: editUserForm.role, staffId: editUserForm.staffId || null }),
+                  });
+                  const data = await res.json();
+                  if (data.success) { setEditingUser(null); fetchData(); }
+                }}
+                className="flex-1 bg-white text-black py-3 rounded-xl text-sm font-semibold hover:bg-gray-200 transition"
+              >Save</button>
+              <button onClick={() => setEditingUser(null)}
+                className="flex-1 border border-white/10 py-3 rounded-xl text-sm hover:bg-white/5 transition">
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

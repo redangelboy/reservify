@@ -29,6 +29,9 @@ export async function GET(req: NextRequest) {
       select: { id: true },
     });
     const ids = locations.map((b) => b.id);
+    const { searchParams } = new URL(req.url);
+    const locationId = searchParams.get("locationId");
+    const businessFilter = locationId ? [locationId] : ids;
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -37,7 +40,7 @@ export async function GET(req: NextRequest) {
 
     const appointments = await prisma.appointment.findMany({
       where: {
-        businessId: { in: ids },
+        businessId: { in: businessFilter },
         date: { gte: today, lte: endOfDay },
         status: { not: "cancelled" },
       },

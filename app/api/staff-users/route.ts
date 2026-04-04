@@ -54,6 +54,19 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ success: true, user });
 }
 
+export async function PATCH(req: NextRequest) {
+  const session = getSession(req);
+  if (!session?.ownerId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { id, name, role, staffId } = await req.json();
+  const user = await prisma.staffUser.update({
+    where: { id },
+    data: { name, role, staffId: staffId || null },
+    include: { staff: true },
+  });
+  return NextResponse.json({ success: true, user });
+}
+
 export async function DELETE(req: NextRequest) {
   const session = getSession(req);
   if (!session?.ownerId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
