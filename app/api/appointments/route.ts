@@ -55,13 +55,19 @@ export async function PATCH(req: NextRequest) {
     const session = req.cookies.get("session")?.value;
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const { businessId } = JSON.parse(session);
-    const { id, status, date, time, staffId, serviceId } = await req.json();
-    console.log("PATCH appointments:", { id, date, time, staffId, serviceId });
-    const existing = await prisma.appointment.findFirst({
-      where: { id, businessId },
-    });
+    const { id, status, date, time, staffId, serviceId, cancelReason } = await req.json();
+    console.log("PATCH appointments:", { id, date, time, staffId, serviceId, status });
+    // Owner puede actualizar appointments de cualquier sucursal
+    const { ownerId } = JSON.parse(session);
+    let existing;
+    if (ownerId) {
+      existing = await prisma.appointment.findFirst({ where: { id } });
+    } else {
+      existing = await prisma.appointment.findFirst({ where: { id, businessId } });
+    }
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
     const updateData: any = { status };
+    if (cancelReason !== undefined) updateData.cancelReason = cancelReason;
     if (date && time) updateData.date = utcFromYmdAndTime(date, time);
     else if (date) updateData.date = new Date(date);
     if (staffId) updateData.staffId = staffId;

@@ -16,6 +16,14 @@ export default function DashboardPage() {
   const [locationMenuOpen, setLocationMenuOpen] = useState(false);
   const [switchingLocation, setSwitchingLocation] = useState(false);
   const locationMenuRef = useRef<HTMLDivElement>(null);
+  const [teamUsers, setTeamUsers] = useState<any[]>([]);
+  const [showTeamModal, setShowTeamModal] = useState(false);
+  const [newUser, setNewUser] = useState({ name: "", email: "", password: "", role: "STAFF", staffId: "" });
+  const [teamLoading, setTeamLoading] = useState(false);
+  const [teamError, setTeamError] = useState("");
+  const [cancelRequestApt, setCancelRequestApt] = useState<any>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelRequests, setCancelRequests] = useState<any[]>([]);
 
   /** Prefer server `isMainBusiness` (matches canonical main row even when locationSlug was set to "main"). */
   function isMainBusinessPayload(biz: any) {
@@ -41,6 +49,17 @@ export default function DashboardPage() {
 
     if (biz?.id) {
       console.log("[dashboard] business.locationSlug =", biz.locationSlug, "| isMainBusiness =", biz.isMainBusiness);
+    }
+
+    // Cargar team users y solicitudes de cancelación si es owner
+    if (sessionData?.ownerId) {
+      const teamRes = await fetch("/api/staff-users?businessId=" + sessionData.businessId);
+      const teamData = await teamRes.json();
+      if (teamData.users) setTeamUsers(teamData.users);
+
+      const cancelRes = await fetch("/api/appointments/cancel-requests");
+      const cancelData = await cancelRes.json();
+      if (cancelData.appointments) setCancelRequests(cancelData.appointments);
     }
 
     const locList = Array.isArray(locsData) ? locsData : [];
@@ -160,6 +179,8 @@ export default function DashboardPage() {
 
   const bookingHref = bookingPath ? `/en${bookingPath}` : `/en/book/${session?.slug ?? ""}`;
   const isMain = isMainBusinessFromPayload(business);
+  const isOwner = !!(session?.ownerId);
+  const userRole = session?.role || null; // "ADMIN" | "STAFF" | null (owner)
   const multiLocation = locations.length > 1;
   const singleLocation = locations.length === 1;
 
@@ -186,6 +207,7 @@ export default function DashboardPage() {
     { label: "Locations", icon: "🏪", href: "/en/dashboard/locations" },
     { label: "Business profile", icon: "⚙️", href: "/en/dashboard/profile" },
     { label: "Consolidated reports", icon: "📊", href: "/en/dashboard/reports" },
+    { label: "Team access", icon: "🔑", href: "#team" },
   ];
 
   const locationActionsMulti = [
@@ -206,13 +228,22 @@ export default function DashboardPage() {
     { label: "Today's bookings", icon: "📅", href: "#today" },
     { label: "Business profile", icon: "⚙️", href: "/en/dashboard/profile" },
     { label: "Locations", icon: "🏪", href: "/en/dashboard/locations" },
+    { label: "Team access", icon: "🔑", href: "#team" },
   ];
 
-  const quickActions = singleLocation
+  const isStaffUser = session?.userType === "staff";
+
+  const staffAllowedLabels = ["Schedule", "Today's bookings", "Display screen", "Assigned staff", "Assigned services"];
+
+  const rawQuickActions = singleLocation
     ? fullActionsSingle
     : isMain
       ? mainActionsMulti
       : locationActionsMulti;
+
+  const quickActions = isStaffUser
+    ? rawQuickActions.filter(a => staffAllowedLabels.includes(a.label))
+    : rawQuickActions;
 
   return (
     <main className="min-h-screen bg-black text-white">
@@ -343,12 +374,15 @@ export default function DashboardPage() {
                 {appointments.map((apt) => (
                   <div key={apt.id} className="border border-white/10 rounded-2xl px-6 py-4 flex justify-between items-center hover:border-white/20 transition">
                     <div className="flex items-center gap-4">
-                      <div className="text-2xl font-mono font-bold text-green-400 w-16">
+                      <div className={`text-2xl font-mono font-bold w-16 ${apt.status === 'cancel_requested' ? 'text-yellow-400' : 'text-green-400'}`}>
                         {formatTime(apt.date)}
                       </div>
                       <div>
                         <div className="font-semibold">{apt.clientName}</div>
                         <div className="text-sm text-gray-400">{apt.service?.name} · with {apt.staff?.name}</div>
+                        {apt.status === 'cancel_requested' && (
+                          <div className="text-xs text-yellow-400 mt-0.5">⏳ Cancel requested</div>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
@@ -359,12 +393,25 @@ export default function DashboardPage() {
                       >
                         Edit
                       </button>
-                      <button
-                        onClick={() => handleCancel(apt.id)}
-                        className="text-xs text-gray-600 hover:text-red-400 transition border border-white/10 px-3 py-1 rounded-full"
-                      >
-                        Cancel
-                      </button>
+                      {!isStaffUser ? (
+                        <button
+                          onClick={() => handleCancel(apt.id)}
+                          className="text-xs text-gray-600 hover:text-red-400 transition border border-white/10 px-3 py-1 rounded-full"
+                        >
+                          Cancel
+                        </button>
+                      ) : apt.status === 'cancel_requested' ? (
+                        <span className="text-xs text-yellow-400 border border-yellow-400/30 px-3 py-1 rounded-full">
+                          Pending
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => { setCancelRequestApt(apt); setCancelReason(""); }}
+                          className="text-xs text-gray-600 hover:text-yellow-400 transition border border-white/10 px-3 py-1 rounded-full"
+                        >
+                          Request cancel
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -409,6 +456,186 @@ export default function DashboardPage() {
               <button onClick={() => setEditingApt(null)}
                 className="flex-1 border border-white/10 py-3 rounded-xl text-sm hover:bg-white/5 transition">
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel Requests - solo owner */}
+      {isOwner && cancelRequests.length > 0 && (
+        <div className="max-w-6xl mx-auto px-8 pb-6">
+          <div className="border border-yellow-500/30 rounded-2xl p-6 bg-yellow-500/5">
+            <h2 className="text-lg font-semibold mb-4 text-yellow-400">⚠️ Cancel requests ({cancelRequests.length})</h2>
+            <div className="flex flex-col gap-3">
+              {cancelRequests.map((apt: any) => (
+                <div key={apt.id} className="flex justify-between items-center border border-white/10 rounded-xl px-5 py-3">
+                  <div>
+                    <div className="font-semibold">{apt.clientName} — {apt.service?.name}</div>
+                    <div className="text-sm text-gray-400">with {apt.staff?.name} · {new Date(apt.date).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</div>
+                    <div className="text-sm text-yellow-300 mt-1">Reason: {apt.cancelReason}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={async () => {
+                        await fetch("/api/appointments", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: apt.id, status: "cancelled" }) });
+                        fetchData();
+                      }}
+                      className="text-xs text-red-400 border border-red-400/30 px-3 py-1 rounded-full hover:bg-red-400/10 transition"
+                    >Approve cancel</button>
+                    <button
+                      onClick={async () => {
+                        await fetch("/api/appointments", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: apt.id, status: "confirmed" }) });
+                        fetchData();
+                      }}
+                      className="text-xs text-green-400 border border-green-400/30 px-3 py-1 rounded-full hover:bg-green-400/10 transition"
+                    >Keep</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Team Access Section - solo owner */}
+      {isOwner && (
+        <div id="team" className="max-w-6xl mx-auto px-8 pb-10">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold">Team access</h2>
+            <button
+              onClick={() => { setShowTeamModal(true); setTeamError(""); setNewUser({ name: "", email: "", password: "", role: "STAFF", staffId: "" }); }}
+              className="text-sm border border-white/10 px-4 py-2 rounded-full hover:bg-white/5 transition"
+            >
+              + Add member
+            </button>
+          </div>
+
+          {teamUsers.length === 0 ? (
+            <div className="border border-white/10 rounded-2xl p-8 text-center">
+              <div className="text-4xl mb-3">🔑</div>
+              <p className="text-gray-400 text-sm">No team members yet</p>
+              <p className="text-gray-600 text-xs mt-1">Add staff or admins so they can access the dashboard</p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {teamUsers.map((u: any) => (
+                <div key={u.id} className="border border-white/10 rounded-2xl px-6 py-4 flex justify-between items-center">
+                  <div>
+                    <div className="font-semibold">{u.name}</div>
+                    <div className="text-sm text-gray-400">{u.email} · {u.staff?.name ? `Linked to ${u.staff.name}` : "No barber linked"}</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-xs px-3 py-1 rounded-full border ${u.role === "ADMIN" ? "border-blue-500/30 text-blue-400" : "border-white/10 text-gray-400"}`}>
+                      {u.role}
+                    </span>
+                    <button
+                      onClick={async () => { await fetch("/api/staff-users", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: u.id }) }); fetchData(); }}
+                      className="text-xs text-gray-600 hover:text-red-400 transition border border-white/10 px-3 py-1 rounded-full"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Modal crear team member */}
+      {showTeamModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-white/10 rounded-2xl p-6 w-full max-w-md flex flex-col gap-4">
+            <h2 className="text-lg font-semibold">Add team member</h2>
+            <input placeholder="Full name" value={newUser.name}
+              onChange={e => setNewUser({ ...newUser, name: e.target.value })}
+              className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30" />
+            <input type="email" placeholder="Email" value={newUser.email}
+              onChange={e => setNewUser({ ...newUser, email: e.target.value })}
+              className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30" />
+            <input type="password" placeholder="Password" value={newUser.password}
+              onChange={e => setNewUser({ ...newUser, password: e.target.value })}
+              className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30" />
+            <select value={newUser.role}
+              onChange={e => setNewUser({ ...newUser, role: e.target.value })}
+              className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30">
+              <option value="STAFF" className="bg-gray-900">Staff — sees own appointments only</option>
+              <option value="ADMIN" className="bg-gray-900">Admin — manages all appointments</option>
+            </select>
+            <select value={newUser.staffId}
+              onChange={e => setNewUser({ ...newUser, staffId: e.target.value })}
+              className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30">
+              <option value="" className="bg-gray-900">Link to barber (optional)</option>
+              {staffList.map((s: any) => (
+                <option key={s.id} value={s.id} className="bg-gray-900">{s.name}</option>
+              ))}
+            </select>
+            {teamError && <p className="text-red-400 text-sm">{teamError}</p>}
+            <div className="flex gap-3 mt-2">
+              <button
+                disabled={teamLoading}
+                onClick={async () => {
+                  if (!newUser.name || !newUser.email || !newUser.password) { setTeamError("Name, email and password are required"); return; }
+                  setTeamLoading(true); setTeamError("");
+                  const res = await fetch("/api/staff-users", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ ...newUser, businessId: session.businessId, staffId: newUser.staffId || null }),
+                  });
+                  const data = await res.json();
+                  if (data.success) { setShowTeamModal(false); fetchData(); }
+                  else setTeamError(data.error || "Error creating user");
+                  setTeamLoading(false);
+                }}
+                className="flex-1 bg-white text-black py-3 rounded-xl text-sm font-semibold hover:bg-gray-200 transition disabled:opacity-50"
+              >
+                {teamLoading ? "Creating..." : "Create"}
+              </button>
+              <button onClick={() => setShowTeamModal(false)}
+                className="flex-1 border border-white/10 py-3 rounded-xl text-sm hover:bg-white/5 transition">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal solicitud de cancelación - solo staff */}
+      {cancelRequestApt && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-white/10 rounded-2xl p-6 w-full max-w-md flex flex-col gap-4">
+            <h2 className="text-lg font-semibold">Request cancellation</h2>
+            <div className="text-sm text-gray-400">{cancelRequestApt.clientName} — {cancelRequestApt.service?.name}</div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-400">Reason for cancellation</label>
+              <textarea
+                value={cancelReason}
+                onChange={e => setCancelReason(e.target.value)}
+                placeholder="Explain why this appointment needs to be cancelled..."
+                rows={3}
+                className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30 transition resize-none"
+              />
+            </div>
+            <div className="flex gap-3 mt-2">
+              <button
+                onClick={async () => {
+                  if (!cancelReason.trim()) return;
+                  await fetch("/api/appointments", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: cancelRequestApt.id, status: "cancel_requested", cancelReason }),
+                  });
+                  setCancelRequestApt(null);
+                  fetchData();
+                }}
+                className="flex-1 bg-yellow-500 text-black py-3 rounded-xl text-sm font-semibold hover:bg-yellow-400 transition"
+              >
+                Send request
+              </button>
+              <button onClick={() => setCancelRequestApt(null)}
+                className="flex-1 border border-white/10 py-3 rounded-xl text-sm hover:bg-white/5 transition">
+                Back
               </button>
             </div>
           </div>

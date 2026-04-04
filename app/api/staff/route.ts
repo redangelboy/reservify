@@ -13,7 +13,20 @@ export async function GET(req: NextRequest) {
     const session = req.cookies.get("session")?.value;
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { ownerId, businessId: sessionBusinessId } = JSON.parse(session);
+    const parsed = JSON.parse(session);
+    const { ownerId, staffUserId, businessId: sessionBusinessId } = parsed;
+
+    // StaffUser: devolver staff de su sucursal directamente
+    if (staffUserId) {
+      const assignments = await prisma.staffAssignment.findMany({
+        where: { businessId: sessionBusinessId, active: true },
+        include: { staff: true },
+      });
+      const staffList = assignments.map((a) => a.staff).filter((s) => s != null && s.active);
+      staffList.sort((a, b) => a.name.localeCompare(b.name));
+      return NextResponse.json({ staff: staffList.map((s) => ({ id: s.id, name: s.name, photo: s.photo })) });
+    }
+
     const mainId = await getMainBusinessIdForOwner(prisma, ownerId);
     if (!mainId) return NextResponse.json({ error: "No business found" }, { status: 400 });
 
@@ -49,9 +62,7 @@ export async function GET(req: NextRequest) {
       where: { businessId: sessionBusinessId, active: true },
       include: { staff: true },
     });
-    const staffList = assignments
-      .map((a) => a.staff)
-      .filter((s) => s != null && s.active);
+    const staffList = assignments.map((a) => a.staff).filter((s) => s != null && s.active);
     staffList.sort((a, b) => a.name.localeCompare(b.name));
     return NextResponse.json(staffList);
   } catch (error) {
@@ -108,25 +119,10 @@ export async function DELETE(req: NextRequest) {
     const row = await prisma.staff.findFirst({ where: { id, businessId: mainId } });
     if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    await prisma.staffAssignment.updateMany({
-      where: { staffId: id },
-      data: { active: false },
-    });
-
-    await prisma.schedule.updateMany({
-      where: { staffId: id },
-      data: { active: false },
-    });
-
-    await prisma.appointment.updateMany({
-      where: { staffId: id, status: "confirmed" },
-      data: { status: "cancelled" },
-    });
-
-    await prisma.staff.update({
-      where: { id },
-      data: { active: false },
-    });
+    await prisma.staffAssignment.updateMany({ where: { staffId: id }, data: { active: false } });
+    await prisma.schedule.updateMany({ where: { staffId: id }, data: { active: false } });
+    await prisma.appointment.updateMany({ where: { staffId: id, status: "confirmed" }, data: { status: "cancelled" } });
+    await prisma.staff.update({ where: { id }, data: { active: false } });
 
     return NextResponse.json({ success: true });
   } catch (error) {
