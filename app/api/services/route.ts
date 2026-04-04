@@ -13,7 +13,21 @@ export async function GET(req: NextRequest) {
     const session = req.cookies.get("session")?.value;
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { ownerId, businessId: sessionBusinessId } = JSON.parse(session);
+    const { ownerId, businessId: sessionBusinessId, userType } = JSON.parse(session);
+
+    if (userType === "staff") {
+      const branch = await prisma.business.findUnique({ where: { id: sessionBusinessId } });
+      const mainBiz = branch?.parentSlug
+        ? await prisma.business.findFirst({ where: { slug: branch.parentSlug } })
+        : null;
+      const targetId = mainBiz?.id ?? sessionBusinessId;
+      const services = await prisma.service.findMany({
+        where: { businessId: targetId, active: true },
+        orderBy: { name: "asc" },
+      });
+      return NextResponse.json(services);
+    }
+
     const mainId = await getMainBusinessIdForOwner(prisma, ownerId);
     if (!mainId) return NextResponse.json({ error: "No business found" }, { status: 400 });
 

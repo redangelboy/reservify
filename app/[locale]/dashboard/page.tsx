@@ -24,6 +24,10 @@ export default function DashboardPage() {
   const [editingUser, setEditingUser] = useState<any>(null);
   const [editUserForm, setEditUserForm] = useState({ name: "", role: "STAFF", staffId: "" });
   const [cancelRequestApt, setCancelRequestApt] = useState<any>(null);
+  const [showNewAptModal, setShowNewAptModal] = useState(false);
+  const [newAptForm, setNewAptForm] = useState({ clientName: "", clientPhone: "", staffId: "", serviceId: "", date: "", time: "" });
+  const [newAptLoading, setNewAptLoading] = useState(false);
+  const [serviceList, setServiceList] = useState<any[]>([]);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelRequests, setCancelRequests] = useState<any[]>([]);
   const [locationFilter, setLocationFilter] = useState<string>("all");
@@ -57,6 +61,11 @@ export default function DashboardPage() {
 
     // Cargar staff list siempre
     const staffRes2 = await fetch("/api/staff");
+    const svcRes = await fetch("/api/services");
+    const svcData = await svcRes.json();
+    console.log("svcData:", JSON.stringify(svcData));
+    if (Array.isArray(svcData)) setServiceList(svcData);
+    else if (svcData.services) setServiceList(svcData.services);
     const staffData2 = await staffRes2.json();
     if (staffData2.staff) setStaffList(staffData2.staff);
     else if (Array.isArray(staffData2)) setStaffList(staffData2);
@@ -342,6 +351,14 @@ export default function DashboardPage() {
         <div className="mb-10">
           <h2 className="text-lg font-semibold mb-4">Quick actions</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {(isOwner || isStaffUser) && (
+              <button
+                onClick={() => { setShowNewAptModal(true); setNewAptForm({ clientName: "", clientPhone: "", staffId: "", serviceId: "", date: "", time: "" }); }}
+                className="border border-white/10 rounded-2xl p-5 text-left hover:border-white/30 transition block">
+                <div className="text-2xl mb-2">📋</div>
+                <div className="text-sm font-medium">New appointment</div>
+              </button>
+            )}
             {quickActions.map((action) => (
               <a key={action.label} href={action.href}
                 className="border border-white/10 rounded-2xl p-5 text-left hover:border-white/30 transition block">
@@ -743,6 +760,88 @@ export default function DashboardPage() {
               <button onClick={() => setCancelRequestApt(null)}
                 className="flex-1 border border-white/10 py-3 rounded-xl text-sm hover:bg-white/5 transition">
                 Back
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal New Appointment */}
+      {showNewAptModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-white/10 rounded-2xl p-6 w-full max-w-md">
+            <h2 className="text-lg font-semibold mb-4">New Appointment</h2>
+            <div className="space-y-3">
+              <input
+                placeholder="Client name *"
+                value={newAptForm.clientName}
+                onChange={e => setNewAptForm({ ...newAptForm, clientName: e.target.value })}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm text-white"
+              />
+              <input
+                placeholder="Client phone"
+                value={newAptForm.clientPhone}
+                onChange={e => setNewAptForm({ ...newAptForm, clientPhone: e.target.value })}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm text-white"
+              />
+              <select
+                value={newAptForm.staffId}
+                onChange={e => setNewAptForm({ ...newAptForm, staffId: e.target.value })}
+                className="w-full bg-gray-900 border border-white/10 rounded-xl px-4 py-2 text-sm text-white"
+              >
+                <option value="">Select barber *</option>
+                {staffList.map((s: any) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+              <select
+                value={newAptForm.serviceId}
+                onChange={e => setNewAptForm({ ...newAptForm, serviceId: e.target.value })}
+                className="w-full bg-gray-900 border border-white/10 rounded-xl px-4 py-2 text-sm text-white"
+              >
+                <option value="">Select service *</option>
+                {serviceList.map((s: any) => (
+                  <option key={s.id} value={s.id}>{s.name} — ${s.price}</option>
+                ))}
+              </select>
+              <input
+                type="date"
+                value={newAptForm.date}
+                onChange={e => setNewAptForm({ ...newAptForm, date: e.target.value })}
+                className="w-full bg-gray-900 border border-white/10 rounded-xl px-4 py-2 text-sm text-white"
+              />
+              <input
+                type="time"
+                value={newAptForm.time}
+                onChange={e => setNewAptForm({ ...newAptForm, time: e.target.value })}
+                className="w-full bg-gray-900 border border-white/10 rounded-xl px-4 py-2 text-sm text-white"
+              />
+
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button
+                disabled={newAptLoading}
+                onClick={async () => {
+                  if (!newAptForm.clientName || !newAptForm.staffId || !newAptForm.serviceId || !newAptForm.date || !newAptForm.time) return;
+                  setNewAptLoading(true);
+                  const res = await fetch("/api/appointments", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(newAptForm),
+                  });
+                  setNewAptLoading(false);
+                  if (res.ok) {
+                    setShowNewAptModal(false);
+                    setNewAptForm({ clientName: "", clientPhone: "", staffId: "", serviceId: "", date: "", time: "" });
+                    fetchData();
+                  }
+                }}
+                className="flex-1 bg-indigo-600 text-white py-3 rounded-xl text-sm font-semibold hover:bg-indigo-500 transition disabled:opacity-50"
+              >
+                {newAptLoading ? "Saving..." : "Create appointment"}
+              </button>
+              <button onClick={() => setShowNewAptModal(false)}
+                className="flex-1 border border-white/10 py-3 rounded-xl text-sm hover:bg-white/5 transition">
+                Cancel
               </button>
             </div>
           </div>

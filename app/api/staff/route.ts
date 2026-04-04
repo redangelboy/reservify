@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
       });
       const staffList = assignments.map((a) => a.staff).filter((s) => s != null && s.active);
       staffList.sort((a, b) => a.name.localeCompare(b.name));
-      return NextResponse.json({ staff: staffList.map((s) => ({ id: s.id, name: s.name, photo: s.photo })) });
+      return NextResponse.json({ staff: staffList.map((s) => ({ id: s.id, name: s.name, photo: s.photo, phone: s.phone, email: s.email })) });
     }
 
     const mainId = await getMainBusinessIdForOwner(prisma, ownerId);
@@ -51,6 +51,8 @@ export async function GET(req: NextRequest) {
           id: s.id,
           name: s.name,
           photo: s.photo,
+          phone: s.phone,
+          email: s.email,
           active: s.active,
           businessId: s.businessId,
           assignedLocationIds: s.staffAssignments.map((a) => a.businessId),
@@ -139,11 +141,16 @@ export async function PATCH(req: NextRequest) {
     const mainId = await getMainBusinessIdForOwner(prisma, ownerId);
     if (!mainId) return NextResponse.json({ error: "No business found" }, { status: 400 });
 
-    const { id, photo } = await req.json();
+    const { id, photo, name, phone, email } = await req.json();
     const row = await prisma.staff.findFirst({ where: { id, businessId: mainId } });
     if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    const updated = await prisma.staff.update({ where: { id }, data: { photo } });
+    const updateData: any = {};
+    if (photo !== undefined) updateData.photo = photo;
+    if (name !== undefined) updateData.name = name;
+    if (phone !== undefined) updateData.phone = phone;
+    if (email !== undefined) updateData.email = email;
+    const updated = await prisma.staff.update({ where: { id }, data: updateData });
     return NextResponse.json(updated);
   } catch (error) {
     return NextResponse.json({ error: "Server error" }, { status: 500 });

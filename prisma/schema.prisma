@@ -40,6 +40,8 @@ model Staff {
   id         String  @id @default(cuid())
   businessId String
   name       String
+  phone      String?
+  email      String?
   photo      String?
   active     Boolean @default(true)
 

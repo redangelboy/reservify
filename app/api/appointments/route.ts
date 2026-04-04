@@ -103,3 +103,32 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
+
+export async function POST(req: NextRequest) {
+  try {
+    const session = req.cookies.get("session")?.value;
+    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const { businessId } = JSON.parse(session);
+    const { clientName, clientPhone, staffId, serviceId, date, time } = await req.json();
+    if (!clientName || !staffId || !serviceId || !date || !time) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+    const aptDate = utcFromYmdAndTime(date, time);
+    const appointment = await prisma.appointment.create({
+      data: {
+        clientName,
+        clientPhone: clientPhone || "",
+        staffId,
+        serviceId,
+        businessId,
+        date: aptDate,
+        status: "confirmed",
+      },
+      include: { staff: true, service: true },
+    });
+    return NextResponse.json({ success: true, appointment });
+  } catch (error) {
+    console.error("POST appointment error:", error);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
+  }
+}

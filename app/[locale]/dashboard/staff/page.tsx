@@ -10,6 +10,9 @@ export default function StaffPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [editingStaff, setEditingStaff] = useState<any>(null);
+  const [editForm, setEditForm] = useState({ name: "", phone: "", email: "" });
+  const [editLoading, setEditLoading] = useState(false);
 
   const fetchAll = async () => {
     const [staffRes, locRes, bizRes] = await Promise.all([
@@ -22,9 +25,7 @@ export default function StaffPage() {
     const biz = await bizRes.json();
     if (Array.isArray(staffData)) setStaff(staffData);
     if (Array.isArray(locData)) setLocations(locData);
-    if (biz?.id) {
-      setIsMain(isMainBusinessFromPayload(biz));
-    }
+    if (biz?.id) setIsMain(isMainBusinessFromPayload(biz));
   };
 
   useEffect(() => { fetchAll(); }, []);
@@ -64,6 +65,21 @@ export default function StaffPage() {
       body: JSON.stringify({ id }),
     });
     fetchAll();
+  };
+
+  const handleEdit = async () => {
+    if (!editingStaff) return;
+    setEditLoading(true);
+    try {
+      const res = await fetch("/api/staff", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: editingStaff.id, name: editForm.name, phone: editForm.phone, email: editForm.email }),
+      });
+      if (res.ok) { setEditingStaff(null); fetchAll(); }
+    } finally {
+      setEditLoading(false);
+    }
   };
 
   const toggleLocation = async (staffId: string, locationId: string, checked: boolean) => {
@@ -118,9 +134,7 @@ export default function StaffPage() {
   return (
     <main className="min-h-screen bg-black text-white">
       <nav className="border-b border-white/10 px-8 py-4 flex items-center gap-4">
-        <a href="/en/dashboard" className="text-gray-400 hover:text-white transition text-sm">
-          ← Dashboard
-        </a>
+        <a href="/en/dashboard" className="text-gray-400 hover:text-white transition text-sm">← Dashboard</a>
         <span className="text-white font-semibold">{isMain ? "Staff" : "Assigned staff"}</span>
       </nav>
 
@@ -129,7 +143,7 @@ export default function StaffPage() {
         <p className="text-gray-400 text-sm mb-8">
           {isMain
             ? "Staff are shared across locations. Assign each person to the locations where they work."
-            : "Read-only list for this location. Use the location menu and switch to your main business to add, remove, or assign staff."}
+            : "Read-only list for this location."}
         </p>
 
         {isMain && (
@@ -144,11 +158,8 @@ export default function StaffPage() {
                 onKeyDown={(e) => e.key === "Enter" && handleAdd()}
                 className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30 transition"
               />
-              <button
-                onClick={handleAdd}
-                disabled={loading}
-                className="bg-white text-black px-6 py-3 rounded-xl text-sm font-semibold hover:bg-gray-200 transition disabled:opacity-50"
-              >
+              <button onClick={handleAdd} disabled={loading}
+                className="bg-white text-black px-6 py-3 rounded-xl text-sm font-semibold hover:bg-gray-200 transition disabled:opacity-50">
                 {loading ? "Adding..." : "Add"}
               </button>
             </div>
@@ -187,15 +198,24 @@ export default function StaffPage() {
                         </>
                       )}
                     </label>
-                    <span className="font-medium">{s.name}</span>
+                    <div>
+                      <div className="font-medium">{s.name}</div>
+                      {s.phone && <div className="text-xs text-gray-500 mt-0.5">{s.phone}</div>}
+                      {s.email && <div className="text-xs text-gray-500">{s.email}</div>}
+                    </div>
                   </div>
                   {isMain && (
-                    <button
-                      onClick={() => handleDelete(s.id)}
-                      className="text-gray-600 hover:text-red-400 transition text-sm shrink-0"
-                    >
-                      Remove
-                    </button>
+                    <div className="flex gap-3 shrink-0">
+                      <button
+                        onClick={() => { setEditingStaff(s); setEditForm({ name: s.name, phone: s.phone || "", email: s.email || "" }); }}
+                        className="text-gray-400 hover:text-white transition text-sm">
+                        Edit
+                      </button>
+                      <button onClick={() => handleDelete(s.id)}
+                        className="text-gray-600 hover:text-red-400 transition text-sm">
+                        Remove
+                      </button>
+                    </div>
                   )}
                 </div>
                 {isMain && branchLocations.length > 0 && (
@@ -205,34 +225,11 @@ export default function StaffPage() {
                       {branchLocations.map((loc) => {
                         const ids: string[] = s.assignedLocationIds || [];
                         const checked = ids.includes(loc.id);
-                        const handlePhotoUpload = async (staffId: string, e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploadingId(staffId);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      await fetch("/api/staff", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: staffId, photo: data.url }),
-      });
-      fetchAll();
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setUploadingId(null);
-    }
-  };
-
-  return (
+                        return (
                           <label key={loc.id} className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
                             <input
                               type="checkbox"
-                              checked={checked}
+                        checked={checked}
                               onChange={(e) => toggleLocation(s.id, loc.id, e.target.checked)}
                               className="rounded border-white/20"
                             />
@@ -248,6 +245,45 @@ export default function StaffPage() {
           )}
         </div>
       </div>
+
+      {/* Edit Staff Modal */}
+      {editingStaff && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-white/10 rounded-2xl p-6 w-full max-w-sm">
+            <h2 className="text-lg font-semibold mb-4">Edit staff member</h2>
+            <div className="space-y-3">
+              <input
+                placeholder="Name *"
+                value={editForm.name}
+                onChange={e => setEditForm({ ...editForm, name: e.target.value })}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm text-white"
+              />
+              <input
+                placeholder="Phone (optional)"
+                value={editForm.phone}
+                onChange={e => setEditForm({ ...editForm, phone: e.target.value })}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm text-white"
+              />
+              <input
+                placeholder="Email (optional)"
+                value={editForm.email}
+                onChange={e => setEditForm({ ...editForm, email: e.target.value })}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm text-white"
+              />
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button onClick={handleEdit} disabled={editLoading}
+                className="flex-1 bg-indigo-600 text-white py-3 rounded-xl text-sm font-semibold hover:bg-indigo-500 transition disabled:opacity-50">
+                {editLoading ? "Saving..." : "Save changes"}
+              </button>
+              <button onClick={() => setEditingStaff(null)}
+                className="flex-1 border border-white/10 py-3 rounded-xl text-sm hover:bg-white/5 transition">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

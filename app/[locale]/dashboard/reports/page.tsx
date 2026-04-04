@@ -10,9 +10,7 @@ export default function ReportsPage() {
     fetch("/api/appointments/consolidated")
       .then(async (r) => {
         const data = await r.json();
-        if (r.status === 403) {
-          throw new Error("Switch to your main business (location switcher) to view consolidated reports.");
-        }
+        if (r.status === 403) throw new Error("Switch to your main business (location switcher) to view consolidated reports.");
         if (!r.ok) throw new Error(data.error || "Failed to load");
         setRows(data.appointments || []);
       })
@@ -23,6 +21,16 @@ export default function ReportsPage() {
   const formatTime = (date: string) =>
     new Date(date).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 
+  // Agrupar por sucursal
+  const grouped: Record<string, any[]> = {};
+  rows.forEach((apt) => {
+    const name = apt.business?.name ?? "Unknown";
+    if (!grouped[name]) grouped[name] = [];
+    grouped[name].push(apt);
+  });
+
+  const grandTotal = rows.reduce((sum, apt) => sum + (apt.service?.price ?? 0), 0);
+
   return (
     <main className="min-h-screen bg-black text-white">
       <nav className="border-b border-white/10 px-8 py-4 flex items-center gap-4">
@@ -32,22 +40,65 @@ export default function ReportsPage() {
       <div className="max-w-5xl mx-auto px-8 py-10">
         <h1 className="text-2xl font-bold mb-2">Today across all locations</h1>
         <p className="text-gray-400 text-sm mb-8">Appointments scheduled for today at every active location.</p>
+
         {loading && <p className="text-gray-500 text-sm">Loading…</p>}
         {error && <p className="text-red-400 text-sm">{error}</p>}
         {!loading && !error && rows.length === 0 && (
           <div className="border border-white/10 rounded-2xl p-8 text-center text-gray-400 text-sm">No appointments today.</div>
         )}
+
         {!loading && rows.length > 0 && (
-          <div className="flex flex-col gap-2">
-            {rows.map((apt) => (
-              <div key={apt.id} className="border border-white/10 rounded-xl px-4 py-3 flex flex-wrap justify-between gap-2 text-sm">
-                <span className="text-gray-500">{apt.business?.name ?? "Location"}</span>
-                <span className="font-mono text-green-400">{formatTime(apt.date)}</span>
-                <span>{apt.clientName}</span>
-                <span className="text-gray-400">{apt.service?.name} · {apt.staff?.name}</span>
-                <span className="text-green-400">${apt.service?.price}</span>
+          <div className="flex flex-col gap-8">
+            {Object.entries(grouped).map(([locationName, apts]) => {
+              const locationTotal = apts.reduce((sum, apt) => sum + (apt.service?.price ?? 0), 0);
+              return (
+                <div key={locationName}>
+                  {/* Header sucursal */}
+                  <div className="flex justify-between items-center mb-3">
+                    <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">{locationName}</h2>
+                    <span className="text-xs text-gray-500">{apts.length} appointment{apts.length !== 1 ? "s" : ""}</span>
+                  </div>
+
+                  {/* Tabla */}
+                  <div className="border border-white/10 rounded-2xl overflow-hidden">
+                    {/* Header cols */}
+                    <div className="grid grid-cols-12 px-5 py-2 border-b border-white/10 text-xs text-gray-500 uppercase tracking-wider">
+                      <span className="col-span-2">Time</span>
+                      <span className="col-span-3">Client</span>
+                      <span className="col-span-4">Service</span>
+                      <span className="col-span-2">Barber</span>
+                      <span className="col-span-1 text-right">$</span>
+                    </div>
+
+                    {apts.map((apt, i) => (
+                      <div key={apt.id}
+                        className={`grid grid-cols-12 px-5 py-3 text-sm items-center ${i !== apts.length - 1 ? "border-b border-white/5" : ""}`}>
+                        <span className="col-span-2 font-mono text-green-400 text-xs">{formatTime(apt.date)}</span>
+                        <span className="col-span-3 font-medium truncate">{apt.clientName}</span>
+                        <span className="col-span-4 text-gray-300 truncate">{apt.service?.name ?? "—"}</span>
+                        <span className="col-span-2 text-gray-400 truncate">{apt.staff?.name ?? "—"}</span>
+                        <span className="col-span-1 text-right text-green-400">${apt.service?.price ?? 0}</span>
+                      </div>
+                    ))}
+
+                    {/* Subtotal sucursal */}
+                    <div className="grid grid-cols-12 px-5 py-3 border-t border-white/10 bg-white/5 text-sm font-semibold">
+                      <span className="col-span-11 text-gray-400">Subtotal — {locationName}</span>
+                      <span className="col-span-1 text-right text-white">${locationTotal}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Gran total */}
+            <div className="border border-white/20 rounded-2xl px-5 py-4 flex justify-between items-center">
+              <div>
+                <div className="text-sm font-semibold text-white">Grand total</div>
+                <div className="text-xs text-gray-500">{rows.length} appointments across {Object.keys(grouped).length} location{Object.keys(grouped).length !== 1 ? "s" : ""}</div>
               </div>
-            ))}
+              <div className="text-2xl font-bold text-green-400">${grandTotal}</div>
+            </div>
           </div>
         )}
       </div>
